@@ -90,3 +90,12 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
 
     at.sidebar.radio(key="nav").set_value("Phim đã chấm").run()
     assert not at.exception and len(at.dataframe) == 1
+
+    # trang tìm theo mô tả: chưa có chỉ mục thì hiện hướng dẫn, không báo lỗi
+    monkeypatch.setenv("MOVIEREC_SEMANTIC", str(tmp_path / "khong_ton_tai.npz"))
+    at2 = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app" / "streamlit_app.py"), default_timeout=30).run()
+    at2.text_input(key="login_user").set_value("tester")
+    at2.text_input(key="login_pw").set_value("12345")
+    at2.button(key="login_btn").click().run()
+    at2.sidebar.radio(key="nav").set_value("Tìm theo mô tả").run()
+    assert not at2.exception and any("chưa được bật" in i.value for i in at2.info)

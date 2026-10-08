@@ -22,6 +22,7 @@ python scripts/tune.py               # chỉnh siêu tham số trên val -> resu
 python scripts/run_final.py          # huấn luyện lại trên train+val, chấm trên test -> results/final.csv
 python scripts/run_two_stage.py      # kiến trúc hai tầng: truy hồi + LightGBM -> results/two_stage.csv
 python scripts/run_ncf.py            # NeuMF trên GPU (cần PyTorch) -> results/ncf.csv
+python scripts/build_semantic.py     # (tùy chọn) chỉ mục tìm phim bằng câu tiếng Việt, cần sentence-transformers
 streamlit run app/streamlit_app.py   # mở web demo tại http://localhost:8501
 ```
 
@@ -42,6 +43,7 @@ src/movierec/
     hybrid.py    Lai: cộng có trọng số điểm đã chuẩn hóa z-score
     ncf.py       NeuMF (Neural Collaborative Filtering) bằng PyTorch
   ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
+  semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
   tmdb.py        Ghép phim MovieLens với TMDB theo tên + năm
@@ -83,7 +85,8 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 2a: dữ liệu TMDB (poster, mô tả, từ khóa, diễn viên), phim tương tự theo nội dung
 - [x] Lớp 2b: kiến trúc hai tầng (truy hồi + LightGBM), NeuMF
 - [x] Lớp 2c: web dùng kiến trúc hai tầng cho người đã thích từ 5 phim, công thức trộn cho người mới
-- [ ] Lớp 3: SASRec/LightGCN, tìm kiếm ngữ nghĩa tiếng Việt, trợ lý hội thoại
+- [x] Lớp 3a: tìm phim bằng câu tiếng Việt (nhúng văn bản đa ngôn ngữ)
+- [ ] Lớp 3b: trợ lý hội thoại, SASRec/LightGCN
 
 ## Nguồn dữ liệu
 

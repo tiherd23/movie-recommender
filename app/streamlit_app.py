@@ -19,6 +19,7 @@ from movierec.service import DEFAULT_ARTIFACT, load_or_build  # noqa: E402
 
 DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
 ARTIFACT = os.environ.get("MOVIEREC_ARTIFACT", str(DEFAULT_ARTIFACT))
+SEMANTIC = os.environ.get("MOVIEREC_SEMANTIC", str(ROOT / "artifacts" / "semantic.npz"))
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
@@ -33,6 +34,21 @@ def get_service(path: str):
 @st.cache_resource
 def get_db(path: str) -> Database:
     return Database(path)
+
+
+@st.cache_resource(show_spinner="Đang nạp mô hình tìm kiếm ngữ nghĩa...")
+def get_semantic(path: str):
+    """Chỉ mục tìm kiếm ngữ nghĩa; None nếu chưa dựng hoặc chưa cài sentence-transformers."""
+    from movierec.semantic import SemanticIndex, load_encoder
+
+    if not Path(path).exists():
+        return None
+    try:
+        index = SemanticIndex.load(path)
+        # nhúng một câu hỏi rất nhẹ nên dùng CPU, để GPU không ảnh hưởng tới độ ổn định của web
+        return index.set_encoder(load_encoder(index.model_name, device="cpu"))
+    except (ImportError, ValueError):  # chưa cài thư viện, hoặc chỉ mục bị hỏng
+        return None
 
 
 svc, db = get_service(ARTIFACT), get_db(DB_PATH)
@@ -149,6 +165,27 @@ def page_search(ratings: dict[int, int]) -> None:
                         st.caption(s["title"])
 
 
+def page_semantic(ratings: dict[int, int]) -> None:
+    st.title("Tìm theo mô tả")
+    st.write("Mô tả bộ phim bạn muốn xem bằng một câu tiếng Việt. Hệ thống so nghĩa của câu đó với nội dung "
+             "từng phim, không cần trùng từ khóa hay biết tên phim.")
+    index = get_semantic(SEMANTIC)
+    if index is None:
+        st.info("Tính năng này chưa được bật. Cài thư viện bằng `pip install sentence-transformers` "
+                "rồi chạy `python scripts/build_semantic.py`, sau đó khởi động lại ứng dụng.")
+        return
+    query = st.text_input("Bạn muốn xem phim như thế nào?", key="semantic_q",
+                          placeholder="ví dụ: phim hoạt hình vui nhộn cho trẻ em")
+    hide_rated = st.checkbox("Ẩn phim tôi đã chấm", value=True, key="semantic_hide")
+    if not query.strip():
+        st.caption("Gợi ý: “phi hành gia bị mắc kẹt ngoài không gian”, “thám tử điều tra kẻ giết người hàng loạt”, "
+                   "“chuyện tình lãng mạn trên con tàu”.")
+        return
+    hits = index.search(query, k=12, exclude=set(ratings) if hide_rated else None, popularity=svc.pop)
+    movies = [svc._movie(i, reason=f"Độ khớp nội dung: {score:.0%}") for i, score in hits]
+    movie_grid(movies, "sem", ratings)
+
+
 def page_history(ratings: dict[int, int]) -> None:
     st.title("Phim đã chấm")
     if not ratings:
@@ -166,7 +203,7 @@ def main() -> None:
     ratings = db.ratings(st.session_state.user_id)
     with st.sidebar:
         st.markdown(f"### 🎬 MovieRec\nXin chào, **{st.session_state.username}**")
-        page = st.radio("Trang", ["Gợi ý cho bạn", "Tìm phim", "Phim đã chấm"], key="nav",
+        page = st.radio("Trang", ["Gợi ý cho bạn", "Tìm phim", "Tìm theo mô tả", "Phim đã chấm"], key="nav",
                         label_visibility="collapsed")
         st.metric("Số phim đã chấm", len(ratings))
         if st.button("Đăng xuất", key="logout_btn"):
@@ -174,7 +211,9 @@ def main() -> None:
             st.rerun()
         st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API "
                    "but is not endorsed or certified by TMDB.")
-    {"Gợi ý cho bạn": page_home, "Tìm phim": page_search, "Phim đã chấm": page_history}[page](ratings)
+    pages = {"Gợi ý cho bạn": page_home, "Tìm phim": page_search, "Tìm theo mô tả": page_semantic,
+             "Phim đã chấm": page_history}
+    pages[page](ratings)
 
 
 main()

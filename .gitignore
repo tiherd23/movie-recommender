@@ -10,3 +10,5 @@ artifacts/
 data/app.db
 .agents/
 .env
+reports/
+logs/

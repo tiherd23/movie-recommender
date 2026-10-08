@@ -1,0 +1,41 @@
+split,query,target
+dev,phi hành gia gặp sự cố trên đường bay tới mặt trăng,Apollo 13 (1995)
+dev,chuyện tình trên con tàu chở khách bị đắm vì đâm phải băng trôi,Titanic (1997)
+dev,hai thám tử truy tìm kẻ giết người theo bảy tội lỗi,Seven (Se7en) (1995)
+dev,người máy sát thủ từ tương lai được gửi về để giết một phụ nữ,"Terminator, The (1984)"
+dev,những món đồ chơi sống dậy khi cậu chủ vắng nhà,Toy Story (1995)
+dev,nhóm lính Mỹ đi tìm một binh nhì sau cuộc đổ bộ Normandy,Saving Private Ryan (1998)
+dev,công viên giải trí có khủng long được nhân bản,Jurassic Park (1993)
+dev,hacker phát hiện thế giới mình sống là mô phỏng máy tính,"Matrix, The (1999)"
+dev,nữ đặc vụ FBI nhờ một bác sĩ ăn thịt người giúp bắt sát nhân,"Silence of the Lambs, The (1991)"
+dev,sư tử con trở về giành lại vương quốc từ người chú,"Lion King, The (1994)"
+dev,người đàn ông chậm phát triển vô tình có mặt ở nhiều sự kiện lịch sử nước Mỹ,Forrest Gump (1994)
+dev,nhân viên ngân hàng bị kết án oan lên kế hoạch vượt ngục,"Shawshank Redemption, The (1994)"
+dev,cá mập trắng khổng lồ tấn công bãi biển du lịch,Jaws (1975)
+dev,cậu bé kết bạn với người ngoài hành tinh bị bỏ lại trái đất,E.T. the Extra-Terrestrial (1982)
+dev,cậu bé bị gia đình bỏ quên ở nhà dịp Giáng sinh và chống trộm,Home Alone (1990)
+dev,cậu bé nhìn thấy người chết và bác sĩ tâm lý giúp cậu,"Sixth Sense, The (1999)"
+dev,anh hùng Scotland lãnh đạo cuộc nổi dậy chống vua Anh,Braveheart (1995)
+dev,người dẫn chương trình thời tiết bị kẹt lặp lại cùng một ngày,Groundhog Day (1993)
+dev,người đàn ông không biết cả cuộc đời mình là một chương trình truyền hình,"Truman Show, The (1998)"
+dev,doanh nhân Đức cứu người Do Thái khỏi trại tập trung,Schindler's List (1993)
+test,thiếu niên du hành về quá khứ bằng xe hơi và gặp bố mẹ thời trẻ,Back to the Future (1985)
+test,phi hành đoàn tàu vũ trụ bị sinh vật ngoài hành tinh săn đuổi,Alien (1979)
+test,hồn ma người chồng bảo vệ vợ nhờ một bà đồng,Ghost (1990)
+test,xe buýt gài bom sẽ nổ nếu chạy chậm lại,Speed (1994)
+test,chú heo con muốn trở thành chó chăn cừu,Babe (1995)
+test,đấu sĩ La Mã trả thù hoàng đế đã giết gia đình mình,Gladiator (2000)
+test,đặc vụ bí mật mặc đồ đen quản lý người ngoài hành tinh trên trái đất,Men in Black (1997)
+test,người ngoài hành tinh xâm lược trái đất vào ngày quốc khánh Mỹ,Independence Day (ID4) (1996)
+test,hai tay giết thuê và những câu chuyện tội phạm đan xen ở Los Angeles,Pulp Fiction (1994)
+test,nhà khảo cổ săn tìm hòm giao ước trước phát xít Đức,Raiders of the Lost Ark (1981)
+test,chàng trai nông dân gia nhập quân nổi dậy chống đế chế thiên hà,Star Wars: Episode IV - A New Hope (1977)
+test,cô gái bị lốc xoáy cuốn tới xứ sở thần tiên và tìm đường về nhà,"Wizard of Oz, The (1939)"
+test,gia đình mafia Ý ở New York và người con trai kế nghiệp,"Godfather, The (1972)"
+test,cô bé bị quỷ ám và hai linh mục trừ tà,"Exorcist, The (1973)"
+test,người đàn ông mất ngủ lập câu lạc bộ đánh nhau bí mật,Fight Club (1999)
+test,võ sĩ quyền anh vô danh có cơ hội đấu với nhà vô địch,Rocky (1976)
+test,nhà văn bị một người hâm mộ cuồng tín giam giữ,Misery (1990)
+test,ông bố giả làm bà quản gia để được gần các con,Mrs. Doubtfire (1993)
+test,cảnh sát New York một mình chống khủng bố trong tòa nhà chọc trời,Die Hard (1988)
+test,giáo viên dạy văn khuyến khích học sinh trường nội trú sống hết mình,Dead Poets Society (1989)

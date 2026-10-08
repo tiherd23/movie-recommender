@@ -1,0 +1,4 @@
+# Cần cho NeuMF và tìm kiếm ngữ nghĩa. Cài PyTorch bản CUDA trước nếu có GPU NVIDIA:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+torch>=2.2
+sentence-transformers>=3.0
