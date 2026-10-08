@@ -82,6 +82,7 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 1c: web Streamlit, tài khoản, SQLite, cold-start, giải thích gợi ý
 - [x] Lớp 2a: dữ liệu TMDB (poster, mô tả, từ khóa, diễn viên), phim tương tự theo nội dung
 - [x] Lớp 2b: kiến trúc hai tầng (truy hồi + LightGBM), NeuMF
+- [x] Lớp 2c: web dùng kiến trúc hai tầng cho người đã thích từ 5 phim, công thức trộn cho người mới
 - [ ] Lớp 3: SASRec/LightGCN, tìm kiếm ngữ nghĩa tiếng Việt, trợ lý hội thoại
 
 ## Nguồn dữ liệu

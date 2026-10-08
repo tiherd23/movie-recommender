@@ -29,13 +29,52 @@ def _zrows(s: np.ndarray) -> np.ndarray:
     return (s - s.mean(axis=1, keepdims=True)) / (s.std(axis=1, keepdims=True) + 1e-8)
 
 
+def candidate_features(scores: dict[str, np.ndarray], seen: np.ndarray, n_candidates: dict[str, int],
+                       user_feats: np.ndarray, user_genre: np.ndarray,
+                       item_feats: np.ndarray, item_genre: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Chọn ứng viên và dựng ma trận đặc trưng cho một lô người dùng.
+
+    scores[name]: (B, n_items) điểm thô của từng mô hình tầng 1 (theo đúng thứ tự trong dict)
+    seen        : (B, n_items) True nếu người dùng đã chấm phim đó
+    user_feats  : (B, k) thống kê người dùng; user_genre: (B, số thể loại) hồ sơ thể loại
+    Trả về (hàng trong lô, chỉ số phim ứng viên, X). Dùng chung cho đánh giá offline và web,
+    để đặc trưng lúc phục vụ giống hệt lúc huấn luyện.
+    """
+    n_users, n_items = seen.shape
+    cand = np.zeros((n_users, n_items), dtype=bool)
+    sources = np.zeros((n_users, n_items), dtype=np.float32)
+    rows_idx = np.arange(n_users)[:, None]
+    per_model = []
+    for name, s in scores.items():
+        s = s.astype(np.float32)
+        z = _zrows(s)
+        order = np.argsort(-np.where(seen, -np.inf, s), axis=1, kind="stable")
+        rank = np.empty_like(order)
+        rank[rows_idx, order] = np.arange(n_items)[None, :]
+        hit = np.zeros_like(cand)
+        hit[rows_idx, order[:, : n_candidates[name]]] = True
+        hit &= ~seen
+        cand |= hit
+        sources += hit
+        per_model.append((z, np.log1p(rank).astype(np.float32)))
+    rows, items = np.nonzero(cand)
+    cols = []
+    for z, logrank in per_model:
+        cols += [z[rows, items], logrank[rows, items]]
+    cols.append(sources[rows, items])
+    cols.append(np.einsum("ij,ij->i", user_genre[rows], item_genre[items]))
+    X = np.column_stack(cols + [user_feats[rows], item_feats[items]]).astype(np.float32)
+    return rows, items, X
+
+
 class TwoStageRanker(Recommender):
     name = "TwoStage"
 
     def __init__(self, als_params: dict | None = None, knn_params: dict | None = None,
                  n_candidates: dict | None = None, lgb_params: dict | None = None, seed: int = 42,
-                 occupation_categorical: bool = False):
-        self.occupation_categorical = occupation_categorical
+                 occupation_categorical: bool = False, use_demographics: bool = True):
+        self.occupation_categorical = occupation_categorical and use_demographics
+        self.use_demographics = use_demographics
         self.als_params = als_params or {"factors": 32, "alpha": 1.0, "min_rating": 4.0}
         self.knn_params = knn_params or {"k": 100, "shrink": 0.0}
         self.n_candidates = n_candidates or {"als": 100, "knn": 100, "pop": 50, "content": 30}
@@ -66,10 +105,11 @@ class TwoStageRanker(Recommender):
             np.log1p(n_u),
             np.bincount(u, r, ds.n_users) / np.maximum(n_u, 1),
             np.bincount(u, liked, ds.n_users) / np.maximum(n_u, 1),
+        ] + ([
             (ds.users["gender"].to_numpy() == "M").astype(float),
             ds.users["age"].to_numpy(float),
             ds.users["occupation"].to_numpy(float),
-        ]).astype(np.float32)
+        ] if self.use_demographics else [])).astype(np.float32)
         year = ds.movies["title"].str.extract(r"\((\d{4})\)\s*$")[0].astype(float).fillna(0).to_numpy()
         self.genre_names_ = sorted({g for gs in ds.movies["genres"] for g in gs.split("|")})
         G = np.array([[g in gs.split("|") for g in self.genre_names_] for gs in ds.movies["genres"]], dtype=np.float32)
@@ -88,39 +128,17 @@ class TwoStageRanker(Recommender):
         self.feature_names_ = (
             [f"{m}_{k}" for m in self.models_ for k in ("z", "logrank")]
             + ["n_sources", "genre_affinity"]
-            + ["u_log_n", "u_mean", "u_like_frac", "u_male", "u_age", "u_occupation"]
+            + ["u_log_n", "u_mean", "u_like_frac"]
+            + (["u_male", "u_age", "u_occupation"] if self.use_demographics else [])
             + ["i_log_n", "i_mean", "i_like_frac", "i_year"] + [f"g_{g}" for g in self.genre_names_]
         )
 
     def _features(self, users: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Trả về (chỉ số hàng trong lô, chỉ số phim ứng viên, ma trận đặc trưng)."""
+        scores = {name: model.score_users(users) for name, model in self.models_.items()}
         seen = self.seen_[users].toarray().astype(bool)
-        cand = np.zeros((len(users), self.n_items_), dtype=bool)
-        sources = np.zeros((len(users), self.n_items_), dtype=np.float32)
-        per_model = []
-        rows_idx = np.arange(len(users))[:, None]
-        for name, model in self.models_.items():
-            s = model.score_users(users).astype(np.float32)
-            z = _zrows(s)
-            masked = np.where(seen, -np.inf, s)
-            order = np.argsort(-masked, axis=1, kind="stable")
-            rank = np.empty_like(order)
-            rank[rows_idx, order] = np.arange(self.n_items_)[None, :]
-            top = order[:, : self.n_candidates[name]]
-            hit = np.zeros_like(cand)
-            hit[rows_idx, top] = True
-            hit &= ~seen
-            cand |= hit
-            sources += hit
-            per_model.append((z, np.log1p(rank).astype(np.float32)))
-        rows, items = np.nonzero(cand)
-        cols = []
-        for z, logrank in per_model:
-            cols += [z[rows, items], logrank[rows, items]]
-        cols.append(sources[rows, items])
-        cols.append(np.einsum("ij,ij->i", self.user_genre_[users][rows], self.item_genre_[items]))
-        X = np.column_stack(cols + [self.user_feats_[users][rows], self.item_feats_[items]]).astype(np.float32)
-        return rows, items, X
+        return candidate_features(scores, seen, self.n_candidates, self.user_feats_[users],
+                                  self.user_genre_[users], self.item_feats_, self.item_genre_)
 
     # ---------- tầng 2: huấn luyện bộ xếp hạng ----------
     def fit_ranker(self, ds: Dataset, hist: pd.DataFrame, label: pd.DataFrame,

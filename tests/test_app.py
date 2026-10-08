@@ -19,6 +19,19 @@ def service(fake_ml1m, tmp_path_factory):
     return RecommenderService.load(path), path
 
 
+def test_service_uses_two_stage_when_enough_likes(service):
+    svc, _ = service
+    assert svc.ranker is not None
+    group = lambda item: (item + 1) % 4
+    liked = dict(list({i: 5 for i in range(len(svc.movies)) if group(i) == 2}.items())[:8])
+    recs = svc.recommend(liked, k=10)
+    assert recs and all(r["method"] == "two_stage" for r in recs)
+    assert all(r["item"] not in liked for r in recs)
+    assert np.mean([group(r["item"]) == 2 for r in recs]) >= 0.8
+    few = svc.recommend(dict(list(liked.items())[:2]), k=5)  # ít phim thích -> công thức trộn
+    assert all(r["method"] == "blend" for r in few)
+
+
 def test_database_accounts_and_ratings(tmp_path):
     db = Database(tmp_path / "app.db")
     uid = db.register("phu", "matkhau")

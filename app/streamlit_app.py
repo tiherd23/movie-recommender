@@ -114,7 +114,13 @@ def page_home(ratings: dict[int, int]) -> None:
         st.divider()
 
     st.subheader("Top phim dành cho bạn")
-    movie_grid(svc.recommend(ratings, genres, k=12), "rec", ratings)
+    recs = svc.recommend(ratings, genres, k=12)
+    if recs and recs[0].get("method") == "two_stage":
+        st.caption("Mô hình đang dùng: kiến trúc hai tầng (truy hồi ứng viên + xếp hạng lại bằng LightGBM).")
+    else:
+        st.caption("Mô hình đang dùng: công thức trộn cho người mới. Thích từ 5 phim trở lên "
+                   "(chấm 4-5 sao) để chuyển sang kiến trúc hai tầng.")
+    movie_grid(recs, "rec", ratings)
 
 
 def page_search(ratings: dict[int, int]) -> None:

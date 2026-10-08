@@ -20,7 +20,14 @@ def main() -> None:
     best = ROOT / "results" / "best_params.json"
     params = json.loads(best.read_text()) if best.exists() else None
     t0 = time.perf_counter()
-    svc = RecommenderService.build(build_dataset(), params)
+    try:
+        import lightgbm  # noqa: F401
+        with_ranker = True
+    except ImportError:
+        with_ranker = False
+        print("Chua cai lightgbm -> web chi dung cong thuc tron. Cai bang: pip install lightgbm")
+    svc = RecommenderService.build(build_dataset(), params, with_ranker=with_ranker)
+    print("Bo xep hang hai tang:", "co" if svc.ranker else "khong")
     svc.save(DEFAULT_ARTIFACT)
     size = DEFAULT_ARTIFACT.stat().st_size / 1e6
     print(f"Da luu {DEFAULT_ARTIFACT} ({size:.1f} MB) sau {time.perf_counter() - t0:.1f}s")
