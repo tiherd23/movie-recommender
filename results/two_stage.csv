@@ -1,0 +1,2 @@
+Model,Precision@10,Recall@10,NDCG@10,HitRate@10,Coverage,RMSE,fit_s
+TwoStage,0.0635,0.1067,0.0982,0.4005,0.2909,,17.7

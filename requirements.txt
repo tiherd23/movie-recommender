@@ -4,3 +4,4 @@ scipy>=1.11
 scikit-learn>=1.4
 pytest>=8.0
 streamlit>=1.37
+lightgbm>=4.3

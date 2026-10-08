@@ -51,3 +51,19 @@ def test_new_models_run(fake_ml1m):
     assert cb.score_users(np.arange(3)).shape == (3, ds.n_items)
     hyb = Hybrid([als, cb], [1.0, 0.2], prefit=True)
     assert np.isfinite(hyb.score_users(np.arange(5))).all()
+
+
+def test_two_stage_ranker(fake_ml1m):
+    from movierec.ranker import TwoStageRanker
+
+    ds = build_dataset(fake_ml1m)
+    ranker = TwoStageRanker({"factors": 8, "alpha": 1.0, "min_rating": 4.0, "iters": 5}, {"k": 20, "shrink": 0.0},
+                            n_candidates={"als": 30, "knn": 30, "pop": 20, "content": 10},
+                            lgb_params={"min_data_in_leaf": 5, "num_leaves": 7})
+    info = ranker.fit_ranker(ds, ds.train, ds.val, num_rounds=30)
+    assert 0 < info["candidate_recall"] <= 1 and info["rows"] > 0
+    assert abs(ranker.importance_.sum() - 1) < 1e-6
+    scores = ranker.fit(ds).score_users(np.arange(4))
+    assert scores.shape == (4, ds.n_items) and (scores > -1e8).any()
+    res = evaluate(ranker, ds)
+    assert res["NDCG@10"] > evaluate(Popularity().fit(ds), ds)["NDCG@10"]

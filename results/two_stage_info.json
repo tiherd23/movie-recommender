@@ -1,0 +1,10 @@
+{
+  "rows": 1020825,
+  "users": 5378,
+  "positives": 25779,
+  "avg_candidates": 189.81498698400893,
+  "candidate_recall": 0.5745046783996433,
+  "best_iteration": 60,
+  "holdout_ndcg@10": 0.14369512487389627,
+  "train_seconds": 28.4
+}

@@ -20,6 +20,8 @@ python -m pytest -q                  # kiểm thử trên dữ liệu giả, kh�
 python scripts/run_baselines.py      # so sánh nhanh các mô hình mốc -> results/baselines.csv
 python scripts/tune.py               # chỉnh siêu tham số trên val -> results/best_params.json (vài phút)
 python scripts/run_final.py          # huấn luyện lại trên train+val, chấm trên test -> results/final.csv
+python scripts/run_two_stage.py      # kiến trúc hai tầng: truy hồi + LightGBM -> results/two_stage.csv
+python scripts/run_ncf.py            # NeuMF trên GPU (cần PyTorch) -> results/ncf.csv
 streamlit run app/streamlit_app.py   # mở web demo tại http://localhost:8501
 ```
 
@@ -38,6 +40,8 @@ src/movierec/
     als.py       Phân rã ma trận cho phản hồi ngầm (implicit ALS), xếp hạng top-K
     content.py   Dựa trên nội dung: TF-IDF thể loại, từ khóa, diễn viên, mô tả (TMDB) + LSA
     hybrid.py    Lai: cộng có trọng số điểm đã chuẩn hóa z-score
+    ncf.py       NeuMF (Neural Collaborative Filtering) bằng PyTorch
+  ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
   tmdb.py        Ghép phim MovieLens với TMDB theo tên + năm
@@ -55,13 +59,29 @@ results/         Bảng kết quả
 - Mỗi mô hình gợi ý top-10 phim chưa xem; đo Precision, Recall, NDCG, HitRate, Coverage.
 - Mô hình dự đoán điểm được đo thêm RMSE.
 
+## Kết quả (tập test, MovieLens 1M)
+
+| Mô hình | Precision@10 | Recall@10 | NDCG@10 | HitRate@10 | Coverage | RMSE | vs Popularity |
+|---|---|---|---|---|---|---|---|
+| ContentBased | 0.0062 | 0.0154 | 0.0109 | 0.0549 | 0.5845 |  | -81.0% |
+| BiasBaseline | 0.0177 | 0.0191 | 0.0214 | 0.1294 | 0.0189 | 0.9237 | -62.7% |
+| SVD | 0.0213 | 0.0258 | 0.0266 | 0.1526 | 0.1711 | 0.8653 | -53.7% |
+| Popularity | 0.0438 | 0.0505 | 0.0574 | 0.2625 | 0.0391 |  | +0.0% |
+| ItemKNN | 0.0493 | 0.0790 | 0.0760 | 0.3256 | 0.1333 |  | +32.4% |
+| NeuMF | 0.0563 | 0.0883 | 0.0838 | 0.3548 | 0.4212 |  | +46.0% |
+| Hybrid | 0.0598 | 0.0955 | 0.0928 | 0.3677 | 0.1557 |  | +61.7% |
+| ImplicitALS | 0.0611 | 0.0986 | 0.0935 | 0.3802 | 0.2245 |  | +62.9% |
+| TwoStage | 0.0635 | 0.1067 | 0.0982 | 0.4005 | 0.2909 |  | +71.1% |
+
+Tạo lại bảng này bằng `python scripts/summarize.py`.
+
 ## Lộ trình
 
 - [x] Lớp 1a: dữ liệu, khung đánh giá, mô hình mốc (Popularity, BiasBaseline, ItemKNN)
 - [x] Lớp 1b: SVD, implicit ALS, content-based, hybrid, chỉnh siêu tham số
 - [x] Lớp 1c: web Streamlit, tài khoản, SQLite, cold-start, giải thích gợi ý
 - [x] Lớp 2a: dữ liệu TMDB (poster, mô tả, từ khóa, diễn viên), phim tương tự theo nội dung
-- [ ] Lớp 2b: kiến trúc hai tầng (FAISS + LightGBM), Neural CF
+- [x] Lớp 2b: kiến trúc hai tầng (truy hồi + LightGBM), NeuMF
 - [ ] Lớp 3: SASRec/LightGCN, tìm kiếm ngữ nghĩa tiếng Việt, trợ lý hội thoại
 
 ## Nguồn dữ liệu

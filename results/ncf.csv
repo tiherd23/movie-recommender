@@ -1,0 +1,2 @@
+Model,Precision@10,Recall@10,NDCG@10,HitRate@10,Coverage,RMSE,fit_s,best_epoch,val_NDCG@10
+NeuMF,0.0563,0.0883,0.0838,0.3548,0.4212,,29.7,18,0.0819
