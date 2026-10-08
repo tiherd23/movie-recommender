@@ -1,0 +1,25 @@
+message,action,genres,exclude_genres,year_from,year_to,similar_to
+chào bạn,chat,,,0,0,
+cảm ơn bạn nhiều nhé,chat,,,0,0,
+bạn là ai vậy,chat,,,0,0,
+gợi ý cho mình vài phim hài,recommend,Comedy,,0,0,
+mình muốn xem phim hành động,recommend,Action,,0,0,
+có phim kinh dị nào hay không,recommend,Horror,,0,0,
+gợi ý phim hoạt hình cho trẻ em,recommend,Animation|Children's,,0,0,
+cho mình phim khoa học viễn tưởng thập niên 80,recommend,Sci-Fi,,1980,1989,
+phim tình cảm sau năm 1995,recommend,Romance,,1995,0,
+gợi ý phim hài nhưng đừng có lãng mạn,recommend,Comedy,Romance,0,0,
+phim hành động không có kinh dị trước năm 1990,recommend,Action,Horror,0,1990,
+tối nay xem gì bây giờ,recommend,,,0,0,
+phim nào giống Toy Story,similar,,,0,0,Toy Story
+mình rất thích The Matrix có phim nào tương tự không,similar,,,0,0,Matrix
+tìm phim giống Titanic,similar,,,0,0,Titanic
+phim kiểu như Jurassic Park,similar,,,0,0,Jurassic Park
+phim về một cậu bé nhìn thấy người chết,describe,,,0,0,
+phim về phi hành gia bị mắc kẹt ngoài không gian,describe,,,0,0,
+một nhóm tù nhân lên kế hoạch vượt ngục,describe,,,0,0,
+phim về khủng long sống lại trong công viên,describe,,,0,0,
+chuyện tình trên con tàu bị chìm,describe,,,0,0,
+phim chiến tranh về cuộc đổ bộ Normandy thập niên 90,describe,War,,1990,1999,
+phim hài về một người đàn ông sống lặp lại cùng một ngày,describe,Comedy,,0,0,
+thám tử truy tìm kẻ giết người hàng loạt theo bảy mối tội đầu,describe,,,0,0,

@@ -20,6 +20,7 @@ from movierec.service import DEFAULT_ARTIFACT, load_or_build  # noqa: E402
 DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
 ARTIFACT = os.environ.get("MOVIEREC_ARTIFACT", str(DEFAULT_ARTIFACT))
 SEMANTIC = os.environ.get("MOVIEREC_SEMANTIC", str(ROOT / "artifacts" / "semantic.npz"))
+LLM_MODEL = os.environ.get("MOVIEREC_LLM", "qwen3:4b")
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
@@ -49,6 +50,15 @@ def get_semantic(path: str):
         return index.set_encoder(load_encoder(index.model_name, device="cpu"))
     except (ImportError, ValueError):  # chưa cài thư viện, hoặc chỉ mục bị hỏng
         return None
+
+
+@st.cache_resource
+def get_assistant(artifact: str, semantic_path: str, model: str):
+    """Trợ lý hội thoại. Không có Ollama thì llm=None: vẫn tìm được phim, chỉ thiếu phần hiểu câu và lời đáp."""
+    from movierec.assistant import Assistant, OllamaClient
+
+    client = OllamaClient(model)
+    return Assistant(get_service(artifact), get_semantic(semantic_path), client if client.available() else None)
 
 
 svc, db = get_service(ARTIFACT), get_db(DB_PATH)
@@ -186,6 +196,46 @@ def page_semantic(ratings: dict[int, int]) -> None:
     movie_grid(movies, "sem", ratings)
 
 
+def page_assistant(ratings: dict[int, int]) -> None:
+    st.title("Trợ lý phim")
+    bot = get_assistant(ARTIFACT, SEMANTIC, LLM_MODEL)
+    if bot.llm is None:
+        st.warning(f"Chưa kết nối được Ollama với mô hình `{LLM_MODEL}`. Trợ lý vẫn tìm phim theo mô tả, "
+                   "nhưng chưa hiểu được điều kiện (thể loại, năm) và chưa viết lời giải thích. "
+                   f"Hãy mở Ollama, chạy `ollama pull {LLM_MODEL}` rồi khởi động lại ứng dụng.")
+    else:
+        st.caption(f"Mô hình ngôn ngữ: {LLM_MODEL} (chạy cục bộ qua Ollama). Phim do hệ thống gợi ý chọn, "
+                   "mô hình ngôn ngữ chỉ hiểu yêu cầu và viết lời giải thích.")
+    chat = st.session_state.setdefault("chat", [])        # các lượt để hiển thị
+    state = st.session_state.setdefault("chat_state", {})  # ngữ cảnh của trợ lý giữa các lượt
+    if st.button("Xóa hội thoại", key="chat_clear") and chat:
+        chat.clear(); state.clear()
+    if not chat:
+        st.caption("Thử: “phim kinh dị thập niên 90 về ngôi nhà ma ám”, “phim nào giống Toy Story”, "
+                   "“gợi ý phim hài, đừng có lãng mạn”, rồi hỏi tiếp “còn phim nào khác không”.")
+    for n, turn in enumerate(chat):
+        with st.chat_message(turn["role"]):
+            st.markdown(turn["text"])
+            if turn.get("movies"):
+                movie_grid(turn["movies"], f"chat{n}", ratings, cols=5)
+    message = st.chat_input("Bạn muốn xem phim gì?", key="chat_input")
+    if message:
+        with st.chat_message("user"):
+            st.markdown(message)
+        with st.chat_message("assistant"):
+            cards = st.container()  # thẻ phim hiện ngay khi chọn xong, lời giải thích tới sau
+
+            def show(movies: list[dict]) -> None:
+                with cards:
+                    movie_grid(movies, f"chat{len(chat) + 1}", ratings, cols=5)
+
+            with st.spinner("Đang tìm phim và viết lời giải thích..."):
+                out = bot.reply(message, ratings, state, on_movies=show)
+        chat.append({"role": "user", "text": message})
+        chat.append({"role": "assistant", "text": out["text"], "movies": out["movies"]})
+        st.rerun()
+
+
 def page_history(ratings: dict[int, int]) -> None:
     st.title("Phim đã chấm")
     if not ratings:
@@ -203,7 +253,7 @@ def main() -> None:
     ratings = db.ratings(st.session_state.user_id)
     with st.sidebar:
         st.markdown(f"### 🎬 MovieRec\nXin chào, **{st.session_state.username}**")
-        page = st.radio("Trang", ["Gợi ý cho bạn", "Tìm phim", "Tìm theo mô tả", "Phim đã chấm"], key="nav",
+        page = st.radio("Trang", ["Gợi ý cho bạn", "Tìm phim", "Tìm theo mô tả", "Trợ lý phim", "Phim đã chấm"], key="nav",
                         label_visibility="collapsed")
         st.metric("Số phim đã chấm", len(ratings))
         if st.button("Đăng xuất", key="logout_btn"):
@@ -212,7 +262,7 @@ def main() -> None:
         st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API "
                    "but is not endorsed or certified by TMDB.")
     pages = {"Gợi ý cho bạn": page_home, "Tìm phim": page_search, "Tìm theo mô tả": page_semantic,
-             "Phim đã chấm": page_history}
+             "Trợ lý phim": page_assistant,              "Phim đã chấm": page_history}
     pages[page](ratings)
 
 

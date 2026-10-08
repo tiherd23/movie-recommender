@@ -1,0 +1,49 @@
+model,message,gold_action,action,description,genres,exclude_genres,similar_to,year_from,year_to,more
+qwen3:4b,chào bạn,chat,chat,,[],[],,0,0,False
+qwen3:4b,cảm ơn bạn nhiều nhé,chat,chat,,[],[],,0,0,False
+qwen3:4b,bạn là ai vậy,chat,chat,,[],[],,0,0,False
+qwen3:4b,gợi ý cho mình vài phim hài,recommend,recommend,,['Comedy'],[],,0,0,False
+qwen3:4b,mình muốn xem phim hành động,recommend,recommend,,['Action'],[],,0,0,False
+qwen3:4b,có phim kinh dị nào hay không,recommend,recommend,,['Horror'],[],,0,0,False
+qwen3:4b,gợi ý phim hoạt hình cho trẻ em,recommend,recommend,for children,"['Animation', ""Children's""]",[],,0,0,False
+qwen3:4b,cho mình phim khoa học viễn tưởng thập niên 80,recommend,recommend,science fiction movies from the 1980s,['Sci-Fi'],[],,1980,1989,False
+qwen3:4b,phim tình cảm sau năm 1995,recommend,recommend,romantic movies after 1995,[],[],,1996,2099,False
+qwen3:4b,gợi ý phim hài nhưng đừng có lãng mạn,recommend,recommend,comedy movies without romance,['Comedy'],['Romance'],,0,0,False
+qwen3:4b,phim hành động không có kinh dị trước năm 1990,recommend,recommend,action movies without horror elements before 1990,['Action'],['Horror'],,0,1989,False
+qwen3:4b,tối nay xem gì bây giờ,recommend,chat,,[],[],,0,0,False
+qwen3:4b,phim nào giống Toy Story,similar,similar,,[],[],Toy Story,0,0,False
+qwen3:4b,mình rất thích The Matrix có phim nào tương tự không,similar,similar,,[],[],The Matrix,0,0,False
+qwen3:4b,tìm phim giống Titanic,similar,similar,,[],[],Titanic,0,0,False
+qwen3:4b,phim kiểu như Jurassic Park,similar,similar,,[],[],Jurassic Park,0,0,False
+qwen3:4b,phim về một cậu bé nhìn thấy người chết,describe,describe,a movie about a boy who sees dead people,[],[],,0,0,False
+qwen3:4b,phim về phi hành gia bị mắc kẹt ngoài không gian,describe,describe,movie about a space traveler trapped in space,[],[],,0,0,False
+qwen3:4b,một nhóm tù nhân lên kế hoạch vượt ngục,describe,describe,A group of prisoners planning to escape from prison,[],[],,0,0,False
+qwen3:4b,phim về khủng long sống lại trong công viên,describe,describe,movie about dinosaurs coming back to life in a park,[],[],,0,0,False
+qwen3:4b,chuyện tình trên con tàu bị chìm,describe,describe,A story about a sinking ship,[],[],,0,0,False
+qwen3:4b,phim chiến tranh về cuộc đổ bộ Normandy thập niên 90,describe,recommend,war movie about the Normandy invasion in the 1990s,['War'],[],,1990,0,False
+qwen3:4b,phim hài về một người đàn ông sống lặp lại cùng một ngày,describe,describe,comedy about a man living the same day repeatedly,[],[],,0,0,False
+qwen3:4b,thám tử truy tìm kẻ giết người hàng loạt theo bảy mối tội đầu,describe,similar,a detective movie about a serial killer with seven major crimes,"['Thriller', 'Mystery']",[],The Seven Deadly Sins (2019),0,0,False
+qwen2.5:3b,chào bạn,chat,chat,,[],[],,0,0,False
+qwen2.5:3b,cảm ơn bạn nhiều nhé,chat,chat,,[],[],,0,0,False
+qwen2.5:3b,bạn là ai vậy,chat,describe,to introduce myself,[],[],,0,0,False
+qwen2.5:3b,gợi ý cho mình vài phim hài,recommend,recommend,,['Comedy'],[],,0,0,False
+qwen2.5:3b,mình muốn xem phim hành động,recommend,recommend,,['Action'],[],,0,0,False
+qwen2.5:3b,có phim kinh dị nào hay không,recommend,recommend,,['Horror'],[],,0,0,False
+qwen2.5:3b,gợi ý phim hoạt hình cho trẻ em,recommend,recommend,,['Animation'],[],,0,0,False
+qwen2.5:3b,cho mình phim khoa học viễn tưởng thập niên 80,recommend,recommend,,['Sci-Fi'],[],,1980,1989,False
+qwen2.5:3b,phim tình cảm sau năm 1995,recommend,recommend,,['Romance'],[],,1996,2023,False
+qwen2.5:3b,gợi ý phim hài nhưng đừng có lãng mạn,recommend,recommend,comedy but not romantic,['Comedy'],['Romance'],,0,0,False
+qwen2.5:3b,phim hành động không có kinh dị trước năm 1990,recommend,recommend,,['Action'],['Horror'],,1900,1990,False
+qwen2.5:3b,tối nay xem gì bây giờ,recommend,recommend,,[],[],,0,0,False
+qwen2.5:3b,phim nào giống Toy Story,similar,similar,,[],[],Toy Story,0,0,False
+qwen2.5:3b,mình rất thích The Matrix có phim nào tương tự không,similar,similar,,[],[],The Matrix,1999,1999,False
+qwen2.5:3b,tìm phim giống Titanic,similar,similar,,[],[],Titanic,0,0,False
+qwen2.5:3b,phim kiểu như Jurassic Park,similar,similar,,['Sci-Fi'],[],Jurassic Park,0,0,False
+qwen2.5:3b,phim về một cậu bé nhìn thấy người chết,describe,describe,a child who sees a dead person,"['Horror', 'Drama']",[],,0,0,False
+qwen2.5:3b,phim về phi hành gia bị mắc kẹt ngoài không gian,describe,describe,space stranded astronaut,['Sci-Fi'],[],,0,0,False
+qwen2.5:3b,một nhóm tù nhân lên kế hoạch vượt ngục,describe,describe,a group of prison inmates planning an escape,"['Drama', 'Thriller']",[],,0,0,False
+qwen2.5:3b,phim về khủng long sống lại trong công viên,describe,describe,dinosaur in a modern park,"['Adventure', 'Sci-Fi']",[],,0,0,False
+qwen2.5:3b,chuyện tình trên con tàu bị chìm,describe,describe,love story on a sunken ship,[],[],,0,0,False
+qwen2.5:3b,phim chiến tranh về cuộc đổ bộ Normandy thập niên 90,describe,similar,war movie about the d-day invasion,['War'],[],,1990,1999,False
+qwen2.5:3b,phim hài về một người đàn ông sống lặp lại cùng một ngày,describe,describe,comedy about a man who lives the same day repeatedly,['Comedy'],[],,0,0,False
+qwen2.5:3b,thám tử truy tìm kẻ giết người hàng loạt theo bảy mối tội đầu,describe,describe,serial killer investigation detective story,['Crime'],[],,0,0,False
