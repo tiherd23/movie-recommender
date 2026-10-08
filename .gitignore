@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/raw/
+data/processed/
+.pytest_cache/
+.ipynb_checkpoints/
+*.zip
+artifacts/
+data/app.db

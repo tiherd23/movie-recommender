@@ -1,0 +1,24 @@
+{
+  "Hybrid": {
+    "weights": [
+      1.0,
+      1.0,
+      0.25,
+      0.25
+    ]
+  },
+  "ImplicitALS": {
+    "factors": 32,
+    "alpha": 1.0,
+    "min_rating": 4.0
+  },
+  "ItemKNN": {
+    "k": 100,
+    "shrink": 0.0
+  },
+  "SVD": {
+    "factors": 64,
+    "reg": 0.06,
+    "epochs": 30
+  }
+}
