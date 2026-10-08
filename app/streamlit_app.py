@@ -55,8 +55,12 @@ def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: i
     columns = st.columns(cols)
     for n, m in enumerate(movies):
         with columns[n % cols], st.container(border=True):
+            if m.get("poster_url"):
+                st.image(m["poster_url"], width="stretch")
             st.markdown(f"**{m['title']}**")
             st.caption(m["genres"].replace("|", " · "))
+            if m.get("overview"):
+                st.caption(m["overview"][:140] + ("…" if len(m["overview"]) > 140 else ""))
             if m.get("reason"):
                 st.caption(f"💡 {m['reason']}")
             rating_box(m["item"], prefix, ratings)
@@ -121,14 +125,22 @@ def page_search(ratings: dict[int, int]) -> None:
         st.warning("Không tìm thấy phim nào.")
     for m in results:
         with st.container(border=True):
-            left, right = st.columns([3, 1])
+            poster, left, right = st.columns([1, 5, 2])
+            if m.get("poster_url"):
+                poster.image(m["poster_url"], width="stretch")
             left.markdown(f"**{m['title']}**")
             left.caption(m["genres"].replace("|", " · "))
+            if m.get("overview"):
+                left.write(m["overview"])
             with right:
                 rating_box(m["item"], "search", ratings)
             with st.expander("Phim tương tự"):
-                for s in svc.similar(m["item"]):
-                    st.write(f"{s['title']} · {s['genres'].replace('|', ', ')}")
+                sim_cols = st.columns(6)
+                for n, s in enumerate(svc.similar(m["item"], k=6)):
+                    with sim_cols[n]:
+                        if s.get("poster_url"):
+                            st.image(s["poster_url"], width="stretch")
+                        st.caption(s["title"])
 
 
 def page_history(ratings: dict[int, int]) -> None:
@@ -138,7 +150,7 @@ def page_history(ratings: dict[int, int]) -> None:
         return
     rows = [{"Phim": svc.movies.iloc[i]["title"], "Thể loại": svc.movies.iloc[i]["genres"].replace("|", ", "),
              "Điểm": STARS[r]} for i, r in ratings.items()]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
 def main() -> None:
@@ -154,6 +166,8 @@ def main() -> None:
         if st.button("Đăng xuất", key="logout_btn"):
             st.session_state.clear()
             st.rerun()
+        st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API "
+                   "but is not endorsed or certified by TMDB.")
     {"Gợi ý cho bạn": page_home, "Tìm phim": page_search, "Phim đã chấm": page_history}[page](ratings)
 
 

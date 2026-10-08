@@ -10,6 +10,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python scripts/download_data.py      # tải MovieLens 1M (~6 MB) vào data/raw/ml-1m
+python scripts/fetch_tmdb.py         # (tùy chọn) poster + mô tả phim từ TMDB, cần TMDB_API_KEY trong file .env
 ```
 
 ## Chạy
@@ -35,10 +36,11 @@ src/movierec/
     item_knn.py  Lọc cộng tác dựa trên phim (cosine + shrinkage)
     svd.py       Phân rã ma trận có độ lệch (Funk SVD), dự đoán điểm
     als.py       Phân rã ma trận cho phản hồi ngầm (implicit ALS), xếp hạng top-K
-    content.py   Dựa trên nội dung: TF-IDF thể loại + thập niên
+    content.py   Dựa trên nội dung: TF-IDF thể loại, từ khóa, diễn viên, mô tả (TMDB) + LSA
     hybrid.py    Lai: cộng có trọng số điểm đã chuẩn hóa z-score
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
+  tmdb.py        Ghép phim MovieLens với TMDB theo tên + năm
 app/
   streamlit_app.py  Web: đăng ký/đăng nhập, hỏi sở thích, gợi ý, tìm phim, lịch sử
 scripts/         download_data.py, run_baselines.py, tune.py, run_final.py, build_service.py
@@ -58,5 +60,11 @@ results/         Bảng kết quả
 - [x] Lớp 1a: dữ liệu, khung đánh giá, mô hình mốc (Popularity, BiasBaseline, ItemKNN)
 - [x] Lớp 1b: SVD, implicit ALS, content-based, hybrid, chỉnh siêu tham số
 - [x] Lớp 1c: web Streamlit, tài khoản, SQLite, cold-start, giải thích gợi ý
-- [ ] Lớp 2: kiến trúc hai tầng (FAISS + LightGBM), Neural CF, dữ liệu TMDB
+- [x] Lớp 2a: dữ liệu TMDB (poster, mô tả, từ khóa, diễn viên), phim tương tự theo nội dung
+- [ ] Lớp 2b: kiến trúc hai tầng (FAISS + LightGBM), Neural CF
 - [ ] Lớp 3: SASRec/LightGCN, tìm kiếm ngữ nghĩa tiếng Việt, trợ lý hội thoại
+
+## Nguồn dữ liệu
+
+- MovieLens 1M (GroupLens Research).
+- Poster và mô tả phim: TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.

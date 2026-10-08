@@ -64,8 +64,27 @@ def load_ml1m(data_dir: Path | str = DEFAULT_DIR) -> tuple[pd.DataFrame, pd.Data
     return ratings, movies, users
 
 
+TMDB_CSV = ROOT / "data" / "processed" / "tmdb.csv"
+TMDB_TEXT_COLS = ["overview", "keywords", "cast", "director", "poster_path"]
+
+
+def attach_tmdb(movies: pd.DataFrame, path: Path | str | None = None) -> pd.DataFrame:
+    """Thêm mô tả, từ khóa, diễn viên, đạo diễn, poster từ TMDB (nếu đã chạy scripts/fetch_tmdb.py).
+    Phim không ghép được thì các cột này là chuỗi rỗng."""
+    path = TMDB_CSV if path is None else Path(path)
+    if not path.exists():
+        return movies
+    tmdb = pd.read_csv(path).drop_duplicates("movie_id").set_index("movie_id")
+    out = movies.copy()
+    for col in TMDB_TEXT_COLS:
+        out[col] = out["movie_id"].map(tmdb[col]).fillna("").astype(str).to_numpy()
+    out["tmdb_id"] = out["movie_id"].map(tmdb["tmdb_id"]).to_numpy()
+    return out
+
+
 def build_dataset(
-    data_dir: Path | str = DEFAULT_DIR, val_frac: float = 0.1, test_frac: float = 0.1
+    data_dir: Path | str = DEFAULT_DIR, val_frac: float = 0.1, test_frac: float = 0.1,
+    tmdb_path: Path | str | None = None,
 ) -> Dataset:
     """Chia theo thời gian cho từng người dùng: 80% đầu train, 10% val, 10% cuối test.
 
@@ -97,6 +116,10 @@ def build_dataset(
     movies = movies[movies["movie_id"].isin(movie_ids)].copy()
     movies.index = movies["movie_id"].map(i_map).to_numpy()
     movies = movies.sort_index()
+    if tmdb_path is None and Path(data_dir) == DEFAULT_DIR:
+        tmdb_path = TMDB_CSV  # dữ liệu TMDB chỉ khớp với bộ MovieLens thật
+    if tmdb_path is not None:
+        movies = attach_tmdb(movies, tmdb_path)
     users = users[users["user_id"].isin(user_ids)].copy()
     users.index = users["user_id"].map(u_map).to_numpy()
     users = users.sort_index()

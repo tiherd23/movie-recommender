@@ -17,6 +17,7 @@ from scipy import sparse
 
 from .data import ROOT, Dataset
 from .models import ContentBased, ImplicitALS, ItemKNN, Popularity
+from .tmdb import IMAGE_BASE
 
 DEFAULT_ARTIFACT = ROOT / "artifacts" / "service.pkl"
 LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
@@ -29,10 +30,11 @@ def _z(v: np.ndarray) -> np.ndarray:
 
 class RecommenderService:
     def __init__(self, movies: pd.DataFrame, item_factors: np.ndarray, sim: sparse.csr_matrix,
-                 item_vecs: np.ndarray, vectorizer, popularity: np.ndarray,
+                 content: ContentBased, popularity: np.ndarray,
                  reg: float, alpha: float, weights: list[float]):
         self.movies, self.Y, self.sim = movies, item_factors, sim
-        self.item_vecs, self.vectorizer, self.pop = item_vecs, vectorizer, popularity
+        self.content, self.pop = content, popularity
+        self.item_vecs = content.item_vecs_
         self.reg, self.alpha, self.weights = reg, alpha, weights
         self._gram = self.Y.T @ self.Y + reg * np.eye(self.Y.shape[1], dtype=np.float32)
         self._title_lower = movies["title"].str.lower()
@@ -51,18 +53,20 @@ class RecommenderService:
         knn = ItemKNN(**knn_p).fit(ds, full)
         content = ContentBased().fit(ds, full)
         pop = Popularity().fit(ds, full)
-        return cls(ds.movies, als.Y_, sparse.csr_matrix(knn.sim_), content.item_vecs_.astype(np.float32),
-                   content.vectorizer_, pop.scores_, als.reg, als.alpha, weights)
+        content.profiles_ = None  # hồ sơ người dùng MovieLens không cần cho web, bỏ để file gọn
+        return cls(ds.movies, als.Y_, sparse.csr_matrix(knn.sim_), content, pop.scores_,
+                   als.reg, als.alpha, weights)
 
     def save(self, path: Path | str = DEFAULT_ARTIFACT) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        state = {k: v for k, v in self.__dict__.items() if not k.startswith("_") and k != "genres"}
+        state = {k: v for k, v in self.__dict__.items()
+                 if not k.startswith("_") and k not in ("genres", "item_vecs")}
         Path(path).write_bytes(pickle.dumps(state))
 
     @classmethod
     def load(cls, path: Path | str = DEFAULT_ARTIFACT) -> "RecommenderService":
         s = pickle.loads(Path(path).read_bytes())
-        return cls(s["movies"], s["Y"], s["sim"], s["item_vecs"], s["vectorizer"], s["pop"],
+        return cls(s["movies"], s["Y"], s["sim"], s["content"], s["pop"],
                    s["reg"], s["alpha"], s["weights"])
 
     # ---------- gợi ý ----------
@@ -73,11 +77,13 @@ class RecommenderService:
         b = (1.0 + self.alpha) * Yl.sum(axis=0)
         return np.linalg.solve(A, b)
 
-    def _genre_vector(self, genres: list[str]) -> np.ndarray:
-        if not genres:
-            return np.zeros(self.item_vecs.shape[1], dtype=np.float32)
-        doc = " ".join(g.replace("-", "") for g in genres)
-        return np.asarray(self.vectorizer.transform([doc]).todense()).ravel().astype(np.float32)
+    def _movie(self, j: int, **extra) -> dict:
+        """Thông tin hiển thị của một phim (poster và mô tả có khi đã lấy dữ liệu TMDB)."""
+        row = self.movies.iloc[j]
+        poster = row.get("poster_path", "")
+        return {"item": int(j), "title": row["title"], "genres": row["genres"],
+                "poster_url": f"{IMAGE_BASE}{poster}" if poster else "",
+                "overview": row.get("overview", ""), **extra}
 
     def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12) -> list[dict]:
         """ratings: {chỉ số phim: số sao}. Trả về k phim chưa chấm, kèm lý do gợi ý."""
@@ -90,7 +96,7 @@ class RecommenderService:
             score += w_als * _z(self.Y @ self._fold_in(liked))
             knn_part = self.sim[liked].toarray()  # (số phim thích, tổng số phim)
             score += w_knn * _z(knn_part.sum(axis=0))
-        profile = self.item_vecs[liked].sum(axis=0) + len(liked or [0]) * self._genre_vector(genres)
+        profile = self.item_vecs[liked].sum(axis=0) + len(liked or [0]) * self.content.genre_vector(genres)
         if np.linalg.norm(profile) > 0:
             # chưa có phim thích nào: thể loại đã chọn là tín hiệu chính
             score += (w_cb if liked else 1.0) * _z(self.item_vecs @ profile)
@@ -113,15 +119,15 @@ class RecommenderService:
                 reason = f"Vì bạn thích {self.movies.iloc[src]['title']}"
             elif set(genres) & set(row["genres"].split("|")):
                 reason = "Hợp thể loại bạn chọn"
-            out.append({"item": int(j), "title": row["title"], "genres": row["genres"],
-                        "score": float(score[j]), "reason": reason})
+            out.append(self._movie(int(j), score=float(score[j]), reason=reason))
         return out
 
     def similar(self, item: int, k: int = 8) -> list[dict]:
-        row = self.sim[item].toarray().ravel()
-        top = [j for j in np.argsort(-row)[:k] if row[j] > 0]
-        return [{"item": int(j), "title": self.movies.iloc[j]["title"],
-                 "genres": self.movies.iloc[j]["genres"]} for j in top]
+        """Phim tương tự = giống về người xem (ItemKNN) VÀ giống về nội dung.
+        Chỉ dùng ItemKNN thì phim quá nổi tiếng hay lọt vào vì ai cũng xem."""
+        score = _z(self.sim[item].toarray().ravel()) + _z(self.item_vecs @ self.item_vecs[item])
+        score[item] = -np.inf
+        return [self._movie(int(j)) for j in np.argsort(-score)[:k]]
 
     def search(self, query: str, limit: int = 20) -> list[dict]:
         q = query.strip().lower()
@@ -129,13 +135,11 @@ class RecommenderService:
             return []
         hits = np.flatnonzero(self._title_lower.str.contains(q, regex=False).to_numpy())
         hits = hits[np.argsort(-self.pop[hits])][:limit]  # phim phổ biến hơn lên trước
-        return [{"item": int(j), "title": self.movies.iloc[j]["title"],
-                 "genres": self.movies.iloc[j]["genres"]} for j in hits]
+        return [self._movie(int(j)) for j in hits]
 
     def popular(self, k: int = 24) -> list[dict]:
         top = np.argsort(-self.pop)[:k]
-        return [{"item": int(j), "title": self.movies.iloc[j]["title"],
-                 "genres": self.movies.iloc[j]["genres"]} for j in top]
+        return [self._movie(int(j)) for j in top]
 
 
 def load_or_build(path: Path | str = DEFAULT_ARTIFACT) -> RecommenderService:
