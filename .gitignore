@@ -8,3 +8,4 @@ data/processed/
 *.zip
 artifacts/
 data/app.db
+.agents/
