@@ -1,0 +1,8 @@
+date,model,device,ollama_processor,num_ctx,action_acc,genre_f1,exclude_acc,year_acc,title_acc,latency_s,note
+2026-10-08,qwen3:4b,cpu,100% CPU,4096,0.875,0.875,1.0,0.875,1.0,8.35,Windows cũ; GPU lỗi CUDA illegal instruction nên ép CPU
+2026-10-08,qwen2.5:3b,cpu,100% CPU,4096,0.917,0.736,1.0,0.875,1.0,6.613,Windows cũ
+2026-10-09,qwen3:4b,auto,33%/67% CPU/GPU,4096,0.875,0.875,1.0,0.833,1.0,11.321,sau khi cài lại Windows
+2026-10-13,qwen3:4b,auto,27%/73% CPU/GPU,2048,0.875,0.833,1.0,0.833,1.0,10.237,
+2026-10-13,qwen3:4b,cpu,100% CPU,2048,0.875,0.875,1.0,0.875,1.0,7.676,cấu hình chọn cho web
+2026-10-13,qwen2.5:3b,cpu,100% CPU,2048,0.917,0.736,1.0,0.875,1.0,6.641,
+2026-10-13,qwen2.5:3b,gpu (num_gpu=99),100% GPU,2048,0.833,0.653,1.0,0.958,1.0,8.12,chạy hoàn toàn trên GPU nhưng vẫn chậm hơn CPU

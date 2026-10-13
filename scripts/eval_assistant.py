@@ -72,9 +72,11 @@ def main() -> None:
             print(f"  [{mark}] {r['message'][:50]:50s} -> {got['action']:9s} {got['genres']} "
                   f"{got['year_from'] or ''}-{got['year_to'] or ''} {got['similar_to']}")
         mean = lambda v: sum(v) / max(len(v), 1)
+        device = "CPU (GPU lỗi hoặc bị tắt)" if client.num_gpu == 0 else "GPU/tự chọn"
+        print(f"  -> kết thúc trên: {device} | num_ctx {client.num_ctx}")
         rows.append({"model": model, "n": len(data), "action_acc": mean(stats["action"]), "genre_f1": mean(stats["genre"]),
                      "exclude_acc": mean(stats["exclude"]), "year_acc": mean(stats["year"]),
-                     "title_acc": mean(stats["title"]), "latency_s": mean(stats["time"])})
+                     "title_acc": mean(stats["title"]), "latency_s": mean(stats["time"]), "device": device})
     if not rows:
         return
     out = pd.DataFrame(rows).round(3)

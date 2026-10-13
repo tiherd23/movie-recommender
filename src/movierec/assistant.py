@@ -61,8 +61,13 @@ class OllamaClient:
 
     def __init__(self, model: str = DEFAULT_LLM, host: str = DEFAULT_HOST, timeout: float = 120.0):
         self.model, self.host, self.timeout = model, host.rstrip("/"), timeout
-        gpu = os.environ.get("MOVIEREC_LLM_NUM_GPU", "")
-        self.num_gpu: int | None = int(gpu) if gpu else None  # số lớp đưa lên GPU; 0 = chỉ CPU, None = Ollama tự chọn
+        # Số lớp đưa lên GPU; 0 = chỉ CPU, đặt biến thành "auto" để Ollama tự chọn.
+        # Mặc định CPU: trên RTX 3050 4 GB, qwen3:4b không vừa VRAM nên Ollama chia ~27% CPU / 73% GPU,
+        # và cách chia này đo được chậm hơn chạy thuần CPU (10.2 s so với 7.7 s mỗi câu, cùng buổi 13/10).
+        gpu = os.environ.get("MOVIEREC_LLM_NUM_GPU", "0")
+        self.num_gpu: int | None = None if gpu.lower() == "auto" else int(gpu)
+        # ngữ cảnh nhỏ thì mô hình chiếm ít VRAM hơn; lời nhắc của trợ lý ngắn nên 2048 token là đủ
+        self.num_ctx = int(os.environ.get("MOVIEREC_LLM_NUM_CTX", "2048"))
         self._think = False  # tắt chế độ suy luận của Qwen3 để trả lời nhanh; None = mô hình không hỗ trợ tham số này
 
     def _post(self, payload: dict) -> dict:
@@ -88,7 +93,7 @@ class OllamaClient:
 
     def __call__(self, messages: list[dict], schema: dict | None = None) -> str:
         payload = {"model": self.model, "messages": messages, "stream": False, "keep_alive": "30m",
-                   "options": {"temperature": 0.0 if schema else 0.4, "num_ctx": 4096,
+                   "options": {"temperature": 0.0 if schema else 0.4, "num_ctx": self.num_ctx,
                                "num_predict": 400}}  # chặn độ dài để giới hạn độ trễ trên CPU
         if schema:
             payload["format"] = schema  # structured output: Ollama ép câu trả lời theo JSON schema
