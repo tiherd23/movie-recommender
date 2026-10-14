@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Callable
@@ -61,6 +62,7 @@ class OllamaClient:
 
     def __init__(self, model: str = DEFAULT_LLM, host: str = DEFAULT_HOST, timeout: float = 120.0):
         self.model, self.host, self.timeout = model, host.rstrip("/"), timeout
+        self.retry_wait = 2.0
         # Số lớp đưa lên GPU; 0 = chỉ CPU, đặt biến thành "auto" để Ollama tự chọn.
         # Mặc định CPU: trên RTX 3050 4 GB, qwen3:4b không vừa VRAM nên Ollama chia ~27% CPU / 73% GPU,
         # và cách chia này đo được chậm hơn chạy thuần CPU (10.2 s so với 7.7 s mỗi câu, cùng buổi 13/10).
@@ -82,6 +84,19 @@ class OllamaClient:
             body = err.read().decode("utf-8", "replace")[:500]  # Ollama ghi nguyên nhân trong thân phản hồi
             raise OSError(f"Ollama trả lỗi {err.code} với mô hình {self.model}: {body}") from None
 
+    def _post_retry(self, payload: dict) -> dict:
+        """Gửi lại một lần nếu kết nối lỗi. Khi Ollama vừa khởi động hoặc đang nạp mô hình, yêu cầu đầu tiên có thể
+        thất bại; nếu không thử lại, trợ lý sẽ lặng lẽ rơi về chế độ dự phòng (mất bộ lọc thể loại, năm)."""
+        try:
+            return self._post(payload)
+        except urllib.error.HTTPError:
+            raise
+        except OSError as err:
+            if "CUDA" in str(err) or isinstance(err, TimeoutError):
+                raise
+            time.sleep(self.retry_wait)
+            return self._post(payload)
+
     def available(self) -> bool:
         """Ollama đang chạy và đã tải mô hình cần dùng."""
         try:
@@ -102,7 +117,7 @@ class OllamaClient:
         if self.num_gpu is not None:
             payload["options"]["num_gpu"] = self.num_gpu
         try:
-            data = self._post(payload)
+            data = self._post_retry(payload)
         except urllib.error.HTTPError as err:
             if err.code != 400 or "think" not in payload:
                 raise

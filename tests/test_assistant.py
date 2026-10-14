@@ -122,3 +122,19 @@ def test_description_always_searches_by_meaning():
     assert out["source"] == "semantic" and [m["item"] for m in out["movies"]] == [2, 5]
     out = Assistant(svc, FakeSemantic(), make_llm(base(action="recommend", genres=["Comedy"])), k=2).reply("x", {})
     assert out["source"] == "recommend" and [m["item"] for m in out["movies"]] == [1, 4]  # không mô tả: gợi ý cá nhân hóa + lọc thể loại
+
+
+def test_ollama_client_retries_once_on_connection_error():
+    from movierec.assistant import OllamaClient
+
+    client = OllamaClient("fake"); client.retry_wait = 0
+    calls = []
+
+    def flaky(payload):
+        calls.append(payload)
+        if len(calls) == 1:
+            raise ConnectionResetError("Ollama đang nạp mô hình")
+        return {"message": {"content": '{"ok": true}'}}
+    client._post = flaky
+    assert client([{"role": "user", "content": "x"}], schema={"type": "object"}) == '{"ok": true}'
+    assert len(calls) == 2

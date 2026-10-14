@@ -199,10 +199,16 @@ def page_semantic(ratings: dict[int, int]) -> None:
 def page_assistant(ratings: dict[int, int]) -> None:
     st.title("Trợ lý phim")
     bot = get_assistant(ARTIFACT, SEMANTIC, LLM_MODEL)
+    if bot.llm is None:  # Ollama có thể được mở sau khi web đã chạy: thử kết nối lại, không cần khởi động lại web
+        from movierec.assistant import OllamaClient
+
+        client = OllamaClient(LLM_MODEL)
+        if client.available():
+            bot.llm = client
     if bot.llm is None:
         st.warning(f"Chưa kết nối được Ollama với mô hình `{LLM_MODEL}`. Trợ lý vẫn tìm phim theo mô tả, "
                    "nhưng chưa hiểu được điều kiện (thể loại, năm) và chưa viết lời giải thích. "
-                   f"Hãy mở Ollama, chạy `ollama pull {LLM_MODEL}` rồi khởi động lại ứng dụng.")
+                   f"Hãy mở Ollama (và chạy `ollama pull {LLM_MODEL}` nếu chưa tải mô hình), rồi tải lại trang này.")
     else:
         st.caption(f"Mô hình ngôn ngữ: {LLM_MODEL} (chạy cục bộ qua Ollama). Phim do hệ thống gợi ý chọn, "
                    "mô hình ngôn ngữ chỉ hiểu yêu cầu và viết lời giải thích.")
