@@ -92,7 +92,8 @@ results/         Bảng kết quả
 | SASRec | 0.0999 | 0.2004 | 0.1779 | 0.5445 | 0.6603 |  | +209.9% |
 
 SASRec cao nhất nhưng phụ thuộc mạnh vào thứ tự chấm điểm: khi xáo trộn thứ tự lịch sử, NDCG@10 giảm từ 0.1769 xuống
-khoảng 0.0626 (`results/sasrec_order.csv`). Web vì vậy dùng kiến trúc hai tầng (TwoStage).
+khoảng 0.0626 (`results/sasrec_order.csv`); huấn luyện lại ngay từ đầu trên chuỗi xáo trộn cũng chỉ đạt 0.0663
+(`results/sasrec_shuffled.csv`). Web vì vậy dùng kiến trúc hai tầng (TwoStage).
 
 Tìm phim theo mô tả tiếng Việt (BGE-M3 + độ phổ biến, 20 câu kiểm tra): Hit@1 0.75, Hit@5 0.90, MRR 0.823.
 Trợ lý hội thoại (qwen3:4b trên CPU, 24 câu): đúng loại yêu cầu 0.875, F1 thể loại 0.875, khoảng 7.6 giây mỗi câu.
@@ -109,7 +110,8 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 2c: web dùng kiến trúc hai tầng cho người đã thích từ 5 phim, công thức trộn cho người mới
 - [x] Lớp 3a: tìm phim bằng câu tiếng Việt (nhúng văn bản đa ngôn ngữ)
 - [x] Lớp 3b: trợ lý hội thoại tiếng Việt (Ollama, qwen3:4b), SASRec và phép thử xáo trộn thứ tự
-- [ ] Thí nghiệm bổ sung: SASRec huấn luyện trên chuỗi xáo trộn, LightGCN
+- [x] Thí nghiệm bổ sung: SASRec huấn luyện trên chuỗi xáo trộn
+- [ ] LightGCN (tùy chọn)
 
 ## Nguồn dữ liệu
 
