@@ -22,8 +22,20 @@ python scripts/tune.py               # chỉnh siêu tham số trên val -> resu
 python scripts/run_final.py          # huấn luyện lại trên train+val, chấm trên test -> results/final.csv
 python scripts/run_two_stage.py      # kiến trúc hai tầng: truy hồi + LightGBM -> results/two_stage.csv
 python scripts/run_ncf.py            # NeuMF trên GPU (cần PyTorch) -> results/ncf.csv
-python scripts/build_semantic.py     # (tùy chọn) chỉ mục tìm phim bằng câu tiếng Việt, cần sentence-transformers
+python scripts/run_sasrec.py         # SASRec, gợi ý theo chuỗi (cần PyTorch) -> results/sasrec.csv
+python scripts/sasrec_order_check.py # SASRec khi xáo trộn thứ tự lịch sử -> results/sasrec_order.csv
+python scripts/summarize.py          # gộp mọi kết quả -> results/summary.csv, summary.md
 streamlit run app/streamlit_app.py   # mở web demo tại http://localhost:8501
+```
+
+Tìm phim theo mô tả và trợ lý hội thoại (tùy chọn):
+
+```powershell
+pip install -r requirements-optional.txt   # PyTorch, sentence-transformers
+python scripts/eval_semantic.py            # so sánh 3 mô hình nhúng, lưu artifacts/semantic.npz
+winget install Ollama.Ollama               # rồi mở lại PowerShell
+ollama pull qwen3:4b
+python scripts/eval_assistant.py           # đánh giá khả năng hiểu câu của trợ lý -> results/assistant_eval.csv
 ```
 
 ## Cấu trúc
@@ -42,14 +54,17 @@ src/movierec/
     content.py   Dựa trên nội dung: TF-IDF thể loại, từ khóa, diễn viên, mô tả (TMDB) + LSA
     hybrid.py    Lai: cộng có trọng số điểm đã chuẩn hóa z-score
     ncf.py       NeuMF (Neural Collaborative Filtering) bằng PyTorch
+    sasrec.py    SASRec: gợi ý theo chuỗi bằng Transformer (PyTorch)
   ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
-  semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ
+  semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ (BGE-M3)
+  assistant.py   Trợ lý hội thoại: LLM cục bộ (Ollama) hiểu câu, các mô hình gợi ý chọn phim
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
   tmdb.py        Ghép phim MovieLens với TMDB theo tên + năm
 app/
-  streamlit_app.py  Web: đăng ký/đăng nhập, hỏi sở thích, gợi ý, tìm phim, lịch sử
-scripts/         download_data.py, run_baselines.py, tune.py, run_final.py, build_service.py
+  streamlit_app.py  Web: đăng ký/đăng nhập, hỏi sở thích, gợi ý, tìm phim, tìm theo mô tả, trợ lý, lịch sử
+scripts/         Tải dữ liệu, chỉnh siêu tham số, huấn luyện, đánh giá; gpu_check.py, gpu_monitor.ps1 kiểm tra GPU
+data/eval/       40 câu tìm theo mô tả và 24 câu hội thoại có nhãn, dùng để đánh giá
 tests/           Kiểm thử tự động (pytest)
 results/         Bảng kết quả
 ```
@@ -70,10 +85,17 @@ results/         Bảng kết quả
 | SVD | 0.0213 | 0.0258 | 0.0266 | 0.1526 | 0.1711 | 0.8653 | -53.7% |
 | Popularity | 0.0438 | 0.0505 | 0.0574 | 0.2625 | 0.0391 |  | +0.0% |
 | ItemKNN | 0.0493 | 0.0790 | 0.0760 | 0.3256 | 0.1333 |  | +32.4% |
-| NeuMF | 0.0563 | 0.0883 | 0.0838 | 0.3548 | 0.4212 |  | +46.0% |
+| NeuMF | 0.0564 | 0.0885 | 0.0839 | 0.3550 | 0.4217 |  | +46.2% |
 | Hybrid | 0.0598 | 0.0955 | 0.0928 | 0.3677 | 0.1557 |  | +61.7% |
 | ImplicitALS | 0.0611 | 0.0986 | 0.0935 | 0.3802 | 0.2245 |  | +62.9% |
 | TwoStage | 0.0635 | 0.1067 | 0.0982 | 0.4005 | 0.2909 |  | +71.1% |
+| SASRec | 0.0999 | 0.2004 | 0.1779 | 0.5445 | 0.6603 |  | +209.9% |
+
+SASRec cao nhất nhưng phụ thuộc mạnh vào thứ tự chấm điểm: khi xáo trộn thứ tự lịch sử, NDCG@10 giảm từ 0.1769 xuống
+khoảng 0.0626 (`results/sasrec_order.csv`). Web vì vậy dùng kiến trúc hai tầng (TwoStage).
+
+Tìm phim theo mô tả tiếng Việt (BGE-M3 + độ phổ biến, 20 câu kiểm tra): Hit@1 0.75, Hit@5 0.90, MRR 0.823.
+Trợ lý hội thoại (qwen3:4b trên CPU, 24 câu): đúng loại yêu cầu 0.875, F1 thể loại 0.875, khoảng 7.6 giây mỗi câu.
 
 Tạo lại bảng này bằng `python scripts/summarize.py`.
 
@@ -86,7 +108,8 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 2b: kiến trúc hai tầng (truy hồi + LightGBM), NeuMF
 - [x] Lớp 2c: web dùng kiến trúc hai tầng cho người đã thích từ 5 phim, công thức trộn cho người mới
 - [x] Lớp 3a: tìm phim bằng câu tiếng Việt (nhúng văn bản đa ngôn ngữ)
-- [ ] Lớp 3b: trợ lý hội thoại, SASRec/LightGCN
+- [x] Lớp 3b: trợ lý hội thoại tiếng Việt (Ollama, qwen3:4b), SASRec và phép thử xáo trộn thứ tự
+- [ ] Thí nghiệm bổ sung: SASRec huấn luyện trên chuỗi xáo trộn, LightGCN
 
 ## Nguồn dữ liệu
 

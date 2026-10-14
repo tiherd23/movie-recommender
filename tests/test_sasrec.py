@@ -56,3 +56,11 @@ def test_save_load_and_shuffled_copy(fake_ml1m, tmp_path):
     a, b = model.history_seq_.numpy(), shuf.history_seq_.numpy()
     assert all(sorted(x) == sorted(y) for x, y in zip(a, b))  # cùng tập phim
     assert (a != b).any() and (model.history_seq_.numpy() == a).all()  # thứ tự đổi, bản gốc không bị sửa
+
+
+def test_shuffle_order_keeps_same_items(fake_ml1m):
+    ds = build_dataset(fake_ml1m)
+    plain = SASRec(max_len=8, device="cpu")._sequences(ds, ds.train)
+    shuf = SASRec(max_len=8, device="cpu", shuffle_order=True)._sequences(ds, ds.train)
+    assert all(sorted(a) == sorted(b) for a, b in zip(plain, shuf))
+    assert (plain != shuf).any()

@@ -192,6 +192,8 @@ def page_semantic(ratings: dict[int, int]) -> None:
                    "“chuyện tình lãng mạn trên con tàu”.")
         return
     hits = index.search(query, k=12, exclude=set(ratings) if hide_rated else None, popularity=svc.pop)
+    st.caption("Thứ tự kết hợp độ khớp nội dung với độ phổ biến của phim (phim quen thuộc hơn được ưu tiên khi nội dung "
+               "gần giống nhau), nên đôi khi phim có độ khớp thấp hơn một chút vẫn đứng trước.")
     movies = [svc._movie(i, reason=f"Độ khớp nội dung: {score:.0%}") for i, score in hits]
     movie_grid(movies, "sem", ratings)
 

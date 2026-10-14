@@ -63,10 +63,13 @@ class SASRec(Recommender):
 
     def __init__(self, dim: int = 64, max_len: int = 200, layers: int = 2, heads: int = 2, dropout: float = 0.2,
                  lr: float = 1e-3, weight_decay: float = 0.0, epochs: int = 200, batch: int = 128,
-                 patience: int = 10, eval_every: int = 2, seed: int = 42, device: str | None = None):
+                 patience: int = 10, eval_every: int = 2, seed: int = 42, shuffle_order: bool = False,
+                 device: str | None = None):
+        """shuffle_order=True: xáo trộn thứ tự phim trong cửa sổ lịch sử của mỗi người (cả lúc học lẫn lúc gợi ý),
+        để đo SASRec làm được bao nhiêu khi chỉ biết TẬP phim gần đây chứ không biết thứ tự."""
         self.dim, self.max_len, self.layers, self.heads, self.dropout = dim, max_len, layers, heads, dropout
         self.lr, self.weight_decay, self.epochs, self.batch = lr, weight_decay, epochs, batch
-        self.patience, self.eval_every, self.seed = patience, eval_every, seed
+        self.patience, self.eval_every, self.seed, self.shuffle_order = patience, eval_every, seed, shuffle_order
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
     # ---------- dữ liệu ----------
@@ -75,11 +78,14 @@ class SASRec(Recommender):
         Mọi lượt chấm đều được tính là một lần xem, kể cả điểm thấp: thứ tự xem là tín hiệu mô hình cần học."""
         df = df.sort_values(["user", "timestamp"], kind="stable")
         out = np.zeros((ds.n_users, self.max_len + 1), dtype=np.int64)
+        rng = np.random.default_rng(self.seed)
         users, items = df["user"].to_numpy(), df["item"].to_numpy() + 1
         starts = np.r_[0, np.flatnonzero(np.diff(users)) + 1]
         ends = np.r_[starts[1:], len(users)]
         for s, e in zip(starts, ends):
             seq = items[max(s, e - self.max_len - 1):e]
+            if self.shuffle_order:
+                seq = rng.permutation(seq)
             out[users[s], -len(seq):] = seq
         return out
 
@@ -140,7 +146,7 @@ class SASRec(Recommender):
     # ---------- lưu / nạp ----------
     def save(self, path) -> None:
         cfg = {k: getattr(self, k) for k in ("dim", "max_len", "layers", "heads", "dropout", "lr", "weight_decay",
-                                             "epochs", "batch", "patience", "eval_every", "seed")}
+                                             "epochs", "batch", "patience", "eval_every", "seed", "shuffle_order")}
         torch.save({"config": cfg, "state": self.net_.state_dict(), "n_items": self.n_items_,
                     "history": self.history_seq_.cpu(), "best_epoch": self.best_epoch_}, path)
 
