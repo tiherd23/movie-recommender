@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from movierec.assistant import Assistant, clean_intent, intent_schema
+from movierec.assistant import Assistant, clean_intent, intent_schema, valid_blurb
 
 GENRES = ["Action", "Comedy", "Horror"]
 
@@ -138,3 +138,15 @@ def test_ollama_client_retries_once_on_connection_error():
     client._post = flaky
     assert client([{"role": "user", "content": "x"}], schema={"type": "object"}) == '{"ok": true}'
     assert len(calls) == 2
+
+
+def test_explain_rejects_echoed_instruction():
+    """Mô hình chép lại câu hướng dẫn thì thử lại một lần; vẫn sai thì bỏ câu giới thiệu, không lưu vào bộ nhớ."""
+    echo = "MỘT câu (dưới 25 từ) tóm tắt nội dung bộ phim, chỉ dùng thông tin có trong mô tả"
+    assert valid_blurb("Một phi hành gia bị kẹt lại trên sao Hỏa.") and not valid_blurb(echo) and not valid_blurb("")
+    answers = iter([echo, "Ba anh em xoay xở với tình yêu."])
+    bot = Assistant(FakeService(), FakeSemantic(), lambda m, schema=None: json.dumps({"reason": next(answers)}))
+    movie = FakeService()._movie(1)
+    assert bot.explain(movie) == "Ba anh em xoay xở với tình yêu."
+    bad = Assistant(FakeService(), FakeSemantic(), lambda m, schema=None: json.dumps({"reason": echo}))
+    assert bad.explain(movie) == "" and movie["item"] not in bad._blurbs

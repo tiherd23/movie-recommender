@@ -136,11 +136,16 @@ def page_home(ratings: dict[int, int]) -> None:
         st.info(f"Hãy chấm ít nhất {MIN_RATINGS} phim bạn đã xem để gợi ý chính xác hơn "
                 f"(đã chấm {len(ratings)}).")
         st.subheader("Bạn đã xem phim nào dưới đây?")
-        movie_grid(svc.popular(24), "onb", ratings)
+        onboarding = svc.popular(24)
+        movie_grid(onboarding, "onb", ratings)
         st.divider()
+    else:
+        onboarding = []
 
     st.subheader("Top phim dành cho bạn")
-    recs = svc.recommend(ratings, genres, k=12)
+    # Người mới: gợi ý chủ yếu là phim phổ biến, nên bỏ các phim vừa hiện ở lưới phía trên cho khỏi lặp
+    shown = {m["item"] for m in onboarding}
+    recs = [m for m in svc.recommend(ratings, genres, k=12 + len(shown)) if m["item"] not in shown][:12]
     if recs and recs[0].get("method") == "two_stage":
         st.caption("Mô hình đang dùng: kiến trúc hai tầng (truy hồi ứng viên + xếp hạng lại bằng LightGBM).")
     else:

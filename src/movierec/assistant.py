@@ -54,6 +54,16 @@ ASK_MORE = "Bạn muốn xem phim như thế nào? Hãy mô tả nội dung ho�
 
 
 # Lời đáp cũng ép theo JSON vì Qwen3 không tắt được chế độ suy luận khi viết tự do.
+# Mảnh của câu hướng dẫn: câu trả về chứa chúng là mô hình chép lại lời dặn chứ không tóm tắt phim
+_PROMPT_ECHO = ("dưới 25 từ", "tóm tắt nội dung", "không nhắc lại tên phim", "không thêm chi tiết", "json")
+
+
+def valid_blurb(text: str) -> bool:
+    """Câu giới thiệu dùng được: không rỗng, không quá dài, không phải là câu hướng dẫn bị chép lại."""
+    low = text.lower()
+    return bool(text) and len(text.split()) <= 60 and not any(f in low for f in _PROMPT_ECHO)
+
+
 REASON_SCHEMA = {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]}
 
 
@@ -246,15 +256,18 @@ class Assistant:
         if movie["item"] in self._blurbs:
             return self._blurbs[movie["item"]]
         info = f"Phim: {movie['title']}\nThể loại: {movie['genres'].replace('|', ', ')}\nMô tả: {overview[:400]}"
-        try:
-            raw = json.loads(self.llm([{"role": "system", "content": REPLY_PROMPT}, {"role": "user", "content": info}],
-                                      schema=REASON_SCHEMA))
-            text = str(raw.get("reason") or "").strip()
-        except (OSError, ValueError, AttributeError):
-            return ""
-        if text:
-            self._blurbs[movie["item"]] = text
-        return text
+        # Mô hình nhỏ đôi khi chép lại chính câu hướng dẫn thay vì tóm tắt: loại câu đó và thử thêm một lần
+        for _ in range(2):
+            try:
+                raw = json.loads(self.llm([{"role": "system", "content": REPLY_PROMPT},
+                                           {"role": "user", "content": info}], schema=REASON_SCHEMA))
+                text = str(raw.get("reason") or "").strip()
+            except (OSError, ValueError, AttributeError):
+                return ""
+            if valid_blurb(text):
+                self._blurbs[movie["item"]] = text
+                return text
+        return ""
 
     def write(self, message: str, movies: list[dict]) -> str:
         """Lời đáp: câu mở đầu cố định + mỗi phim một dòng. Tên phim lấy từ dữ liệu, LLM chỉ viết câu giới thiệu."""
