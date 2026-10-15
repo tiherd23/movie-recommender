@@ -1,0 +1,2 @@
+Model,Precision@10,Recall@10,NDCG@10,HitRate@10,Coverage,RMSE,fit_s,best_epoch,val_NDCG@10
+LightGCN,0.0586,0.0878,0.0857,0.3567,0.3492,,2485.8,115,0.0837

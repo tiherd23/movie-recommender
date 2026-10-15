@@ -22,6 +22,7 @@ python scripts/tune.py               # chỉnh siêu tham số trên val -> resu
 python scripts/run_final.py          # huấn luyện lại trên train+val, chấm trên test -> results/final.csv
 python scripts/run_two_stage.py      # kiến trúc hai tầng: truy hồi + LightGBM -> results/two_stage.csv
 python scripts/run_ncf.py            # NeuMF trên GPU (cần PyTorch) -> results/ncf.csv
+python scripts/run_lightgcn.py       # LightGCN, mạng nơ-ron đồ thị (cần PyTorch) -> results/lightgcn.csv
 python scripts/run_sasrec.py         # SASRec, gợi ý theo chuỗi (cần PyTorch) -> results/sasrec.csv
 python scripts/sasrec_order_check.py # SASRec khi xáo trộn thứ tự lịch sử -> results/sasrec_order.csv
 python scripts/summarize.py          # gộp mọi kết quả -> results/summary.csv, summary.md
@@ -54,6 +55,7 @@ src/movierec/
     content.py   Dựa trên nội dung: TF-IDF thể loại, từ khóa, diễn viên, mô tả (TMDB) + LSA
     hybrid.py    Lai: cộng có trọng số điểm đã chuẩn hóa z-score
     ncf.py       NeuMF (Neural Collaborative Filtering) bằng PyTorch
+    lightgcn.py  LightGCN: lọc cộng tác bằng mạng nơ-ron đồ thị (PyTorch)
     sasrec.py    SASRec: gợi ý theo chuỗi bằng Transformer (PyTorch)
   ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
   semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ (BGE-M3)
@@ -86,6 +88,7 @@ results/         Bảng kết quả
 | Popularity | 0.0438 | 0.0505 | 0.0574 | 0.2625 | 0.0391 |  | +0.0% |
 | ItemKNN | 0.0493 | 0.0790 | 0.0760 | 0.3256 | 0.1333 |  | +32.4% |
 | NeuMF | 0.0564 | 0.0885 | 0.0839 | 0.3550 | 0.4217 |  | +46.2% |
+| LightGCN | 0.0586 | 0.0878 | 0.0857 | 0.3567 | 0.3492 |  | +49.3% |
 | Hybrid | 0.0598 | 0.0955 | 0.0928 | 0.3677 | 0.1557 |  | +61.7% |
 | ImplicitALS | 0.0611 | 0.0986 | 0.0935 | 0.3802 | 0.2245 |  | +62.9% |
 | TwoStage | 0.0635 | 0.1067 | 0.0982 | 0.4005 | 0.2909 |  | +71.1% |
@@ -111,7 +114,7 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 3a: tìm phim bằng câu tiếng Việt (nhúng văn bản đa ngôn ngữ)
 - [x] Lớp 3b: trợ lý hội thoại tiếng Việt (Ollama, qwen3:4b), SASRec và phép thử xáo trộn thứ tự
 - [x] Thí nghiệm bổ sung: SASRec huấn luyện trên chuỗi xáo trộn
-- [ ] LightGCN (tùy chọn)
+- [x] LightGCN: NDCG@10 0.0857, xấp xỉ NeuMF, chưa vượt Implicit ALS
 
 ## Nguồn dữ liệu
 
