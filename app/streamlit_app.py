@@ -21,6 +21,7 @@ DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
 ARTIFACT = os.environ.get("MOVIEREC_ARTIFACT", str(DEFAULT_ARTIFACT))
 SEMANTIC = os.environ.get("MOVIEREC_SEMANTIC", str(ROOT / "artifacts" / "semantic.npz"))
 LLM_MODEL = os.environ.get("MOVIEREC_LLM", "qwen3:4b")
+BLURBS_PATH = os.environ.get("MOVIEREC_BLURBS", str(ROOT / "artifacts" / "blurbs_vi.json"))
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
@@ -52,16 +53,30 @@ def get_semantic(path: str):
         return None
 
 
+def _mtime(path: str) -> float:
+    return Path(path).stat().st_mtime if Path(path).exists() else 0.0
+
+
 @st.cache_resource
-def get_assistant(artifact: str, semantic_path: str, model: str):
+def get_blurbs(path: str, mtime: float) -> dict[str, str]:
+    """Câu giới thiệu tiếng Việt viết sẵn (scripts/build_blurbs.py). Tham số mtime: tệp được cập nhật thì tự nạp lại."""
+    from movierec.assistant import load_blurbs
+
+    return load_blurbs(path)
+
+
+@st.cache_resource
+def get_assistant(artifact: str, semantic_path: str, model: str, blurbs_path: str, blurbs_mtime: float):
     """Trợ lý hội thoại. Không có Ollama thì llm=None: vẫn tìm được phim, chỉ thiếu phần hiểu câu và lời đáp."""
     from movierec.assistant import Assistant, OllamaClient
 
     client = OllamaClient(model)
-    return Assistant(get_service(artifact), get_semantic(semantic_path), client if client.available() else None)
+    return Assistant(get_service(artifact), get_semantic(semantic_path), client if client.available() else None,
+                     blurbs=get_blurbs(blurbs_path, blurbs_mtime))
 
 
 svc, db = get_service(ARTIFACT), get_db(DB_PATH)
+BLURBS = get_blurbs(BLURBS_PATH, _mtime(BLURBS_PATH))
 
 
 # ---------- thành phần dùng chung ----------
@@ -85,7 +100,9 @@ def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: i
                 st.image(m["poster_url"], width="stretch")
             st.markdown(f"**{m['title']}**")
             st.caption(m["genres"].replace("|", " · "))
-            if m.get("overview"):
+            if m["title"] in BLURBS:  # có câu tiếng Việt viết sẵn thì hiện câu đó, không thì mô tả gốc tiếng Anh
+                st.caption(BLURBS[m["title"]])
+            elif m.get("overview"):
                 st.caption(m["overview"][:140] + ("…" if len(m["overview"]) > 140 else ""))
             if m.get("reason"):
                 st.caption(f"💡 {m['reason']}")
@@ -167,8 +184,10 @@ def page_search(ratings: dict[int, int]) -> None:
                 poster.image(m["poster_url"], width="stretch")
             left.markdown(f"**{m['title']}**")
             left.caption(m["genres"].replace("|", " · "))
+            if m["title"] in BLURBS:
+                left.write(BLURBS[m["title"]])
             if m.get("overview"):
-                left.write(m["overview"])
+                left.caption(m["overview"])
             with right:
                 rating_box(m["item"], "search", ratings)
             with st.expander("Phim tương tự"):
@@ -205,7 +224,7 @@ def page_semantic(ratings: dict[int, int]) -> None:
 
 def page_assistant(ratings: dict[int, int]) -> None:
     st.title("Trợ lý phim")
-    bot = get_assistant(ARTIFACT, SEMANTIC, LLM_MODEL)
+    bot = get_assistant(ARTIFACT, SEMANTIC, LLM_MODEL, BLURBS_PATH, _mtime(BLURBS_PATH))
     if bot.llm is None:  # Ollama có thể được mở sau khi web đã chạy: thử kết nối lại, không cần khởi động lại web
         from movierec.assistant import OllamaClient
 

@@ -19,6 +19,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -46,6 +47,19 @@ REPLY_PROMPT = """Bạn dịch và rút gọn mô tả phim sang tiếng Việt 
 Trả về JSON với "reason": MỘT câu (dưới 25 từ) tóm tắt nội dung bộ phim, chỉ dùng thông tin có trong mô tả,
 không thêm chi tiết, không nhắc lại tên phim, không nhận xét."""
 
+# Một ví dụ mẫu (phim bịa) đặt trước phim thật: có ví dụ thì mô hình viết đúng dạng câu tóm tắt thay vì chép lại
+# lời dặn ở trên, lỗi gặp ở 395/473 câu bị loại trong lần chạy đầu không có ví dụ.
+REPLY_EXAMPLE = [
+    {"role": "user", "content": "Phim: Harbor Lights (1990)\nThể loại: Drama\nMô tả: A retired sailor returns to his "
+                                "hometown to reconnect with the daughter he abandoned decades ago, while the town fights "
+                                "to save its old lighthouse."},
+    {"role": "assistant", "content": '{"reason": "Một thủy thủ về hưu trở về quê tìm lại người con gái bị bỏ rơi, '
+                                     'giữa lúc thị trấn cố cứu ngọn hải đăng cũ."}'},
+]
+# temperature cho từng lần thử: lần đầu ổn định; nếu bị loại thì thêm ngẫu nhiên, vì với temperature 0
+# mô hình trả lại đúng câu hỏng cũ (đã thấy trong log lần chạy đầu)
+BLURB_TEMPERATURES = (0.0, 0.6, 0.9)
+
 CHAT_PROMPT = """Bạn là trợ lý gợi ý phim của MovieRec. Trả về JSON với "reply" là một hoặc hai câu tiếng Việt.
 Không tự nêu tên phim. Hãy mời người dùng mô tả nội dung, thể loại hoặc một phim họ thích để bạn tìm giúp."""
 
@@ -55,13 +69,44 @@ ASK_MORE = "Bạn muốn xem phim như thế nào? Hãy mô tả nội dung ho�
 
 # Lời đáp cũng ép theo JSON vì Qwen3 không tắt được chế độ suy luận khi viết tự do.
 # Mảnh của câu hướng dẫn: câu trả về chứa chúng là mô hình chép lại lời dặn chứ không tóm tắt phim
+# Chữ Hán/Nhật/Hàn: Qwen đôi khi chen một từ tiếng Trung vào câu tiếng Việt (ví dụ "từ hài đến 悲剧")
+_FOREIGN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 _PROMPT_ECHO = ("dưới 25 từ", "tóm tắt nội dung", "không nhắc lại tên phim", "không thêm chi tiết", "json")
 
 
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"\w+", text.lower()))
+
+
+# câu trả lời mẫu trong REPLY_EXAMPLE: mô hình đôi khi chép nguyên câu này cho một phim khác (12/3.629 câu ở lần chạy
+# thứ hai, ví dụ Robocop 2 và East of Eden được tả là "một thủy thủ về hưu... ngọn hải đăng cũ")
+_EXAMPLE_WORDS = _words(json.loads(REPLY_EXAMPLE[1]["content"])["reason"])
+
+
 def valid_blurb(text: str) -> bool:
-    """Câu giới thiệu dùng được: không rỗng, không quá dài, không phải là câu hướng dẫn bị chép lại."""
-    low = text.lower()
-    return bool(text) and len(text.split()) <= 60 and not any(f in low for f in _PROMPT_ECHO)
+    """Câu giới thiệu dùng được: không rỗng, không quá dài, không chép lại lời dặn hay câu mẫu, không chen chữ Hán."""
+    low, words = text.lower(), _words(text)
+    copies_example = len(words & _EXAMPLE_WORDS) / max(len(words | _EXAMPLE_WORDS), 1) > 0.4
+    return (bool(text) and len(text.split()) <= 60 and not any(f in low for f in _PROMPT_ECHO)
+            and not _FOREIGN.search(text) and not copies_example)
+
+
+def load_blurbs(path) -> dict[str, str]:
+    """Câu giới thiệu tiếng Việt viết sẵn (scripts/build_blurbs.py), theo tên phim. Chưa có tệp thì trả về rỗng."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {str(k): str(v) for k, v in data.items() if valid_blurb(str(v))}
+
+
+def save_blurbs(path, blurbs: dict[str, str]) -> None:
+    """Ghi ra tệp tạm rồi đổi tên, để lỡ dừng giữa chừng cũng không làm hỏng tệp cũ."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(blurbs, ensure_ascii=False, indent=0), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 REASON_SCHEMA = {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]}
@@ -116,9 +161,11 @@ class OllamaClient:
             return False
         return any(n == self.model or n.split(":")[0] == self.model for n in names)
 
-    def __call__(self, messages: list[dict], schema: dict | None = None) -> str:
+    def __call__(self, messages: list[dict], schema: dict | None = None, temperature: float | None = None) -> str:
+        if temperature is None:
+            temperature = 0.0 if schema else 0.4
         payload = {"model": self.model, "messages": messages, "stream": False, "keep_alive": "30m",
-                   "options": {"temperature": 0.0 if schema else 0.4, "num_ctx": self.num_ctx,
+                   "options": {"temperature": temperature, "num_ctx": self.num_ctx,
                                "num_predict": 400}}  # chặn độ dài để giới hạn độ trễ trên CPU
         if schema:
             payload["format"] = schema  # structured output: Ollama ép câu trả lời theo JSON schema
@@ -177,12 +224,15 @@ def clean_intent(raw: dict, genres: list[str]) -> dict:
 
 
 class Assistant:
-    def __init__(self, service, semantic=None, llm: LLM | None = None, k: int = 5):
+    def __init__(self, service, semantic=None, llm: LLM | None = None, k: int = 5,
+                 blurbs: dict[str, str] | None = None):
         self.svc, self.semantic, self.llm, self.k = service, semantic, llm, k
         years = service.movies["title"].str.extract(r"\((\d{4})\)\s*$")[0]
         self.years = years.fillna(0).astype(int).to_numpy()
         self.genre_sets = [set(g.split("|")) for g in service.movies["genres"]]
-        self._blurbs: dict[int, str] = {}  # câu giới thiệu đã viết, theo chỉ số phim
+        # câu giới thiệu đã viết, theo tên phim; nạp sẵn từ tệp viết trước thì lúc chat không phải gọi LLM cho bước này
+        self._blurbs: dict[str, str] = dict(blurbs or {})
+        self.rejected: list[tuple[str, str]] = []  # (tên phim, câu bị loại) để kiểm tra chất lượng
 
     # ---------- bước 1: hiểu câu chat ----------
     def parse(self, message: str, history: list[dict] | None = None) -> dict:
@@ -250,23 +300,29 @@ class Assistant:
         Mỗi phim một lần gọi LLM và KHÔNG đưa câu hỏi của người dùng vào: khi thử, mô hình nhỏ nhận cả danh sách
         thì gán nhầm nội dung giữa các phim, còn khi biết yêu cầu thì bịa thêm chi tiết cho khớp yêu cầu.
         Kết quả được nhớ lại theo phim nên lần sau không phải gọi LLM nữa."""
+        if movie["title"] in self._blurbs:
+            return self._blurbs[movie["title"]]
         overview = str(movie.get("overview") or "").strip()
         if self.llm is None or not overview:
             return ""
-        if movie["item"] in self._blurbs:
-            return self._blurbs[movie["item"]]
         info = f"Phim: {movie['title']}\nThể loại: {movie['genres'].replace('|', ', ')}\nMô tả: {overview[:400]}"
-        # Mô hình nhỏ đôi khi chép lại chính câu hướng dẫn thay vì tóm tắt: loại câu đó và thử thêm một lần
-        for _ in range(2):
+        # Mô hình nhỏ đôi khi chép lại câu hướng dẫn, chen chữ Hán, hoặc lặp từ tới khi bị cắt giữa chừng (JSON hỏng):
+        # loại các câu đó và thử lại với temperature cao hơn. self.rejected giữ câu bị loại để xem lại.
+        messages = [{"role": "system", "content": REPLY_PROMPT}, *REPLY_EXAMPLE, {"role": "user", "content": info}]
+        for n, temp in enumerate(BLURB_TEMPERATURES):
             try:
-                raw = json.loads(self.llm([{"role": "system", "content": REPLY_PROMPT},
-                                           {"role": "user", "content": info}], schema=REASON_SCHEMA))
-                text = str(raw.get("reason") or "").strip()
-            except (OSError, ValueError, AttributeError):
+                out = (self.llm(messages, schema=REASON_SCHEMA) if n == 0
+                       else self.llm(messages, schema=REASON_SCHEMA, temperature=temp))
+            except OSError:
                 return ""
+            try:
+                text = str(json.loads(out).get("reason") or "").strip()
+            except (ValueError, AttributeError):
+                text = ""
             if valid_blurb(text):
-                self._blurbs[movie["item"]] = text
+                self._blurbs[movie["title"]] = text
                 return text
+            self.rejected.append((movie["title"], (text or str(out))[:300]))
         return ""
 
     def write(self, message: str, movies: list[dict]) -> str:

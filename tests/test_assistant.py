@@ -4,7 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from movierec.assistant import Assistant, clean_intent, intent_schema, valid_blurb
+from movierec.assistant import Assistant, clean_intent, intent_schema, load_blurbs, save_blurbs, valid_blurb
 
 GENRES = ["Action", "Comedy", "Horror"]
 
@@ -144,9 +144,31 @@ def test_explain_rejects_echoed_instruction():
     """Mô hình chép lại câu hướng dẫn thì thử lại một lần; vẫn sai thì bỏ câu giới thiệu, không lưu vào bộ nhớ."""
     echo = "MỘT câu (dưới 25 từ) tóm tắt nội dung bộ phim, chỉ dùng thông tin có trong mô tả"
     assert valid_blurb("Một phi hành gia bị kẹt lại trên sao Hỏa.") and not valid_blurb(echo) and not valid_blurb("")
-    answers = iter([echo, "Ba anh em xoay xở với tình yêu."])
-    bot = Assistant(FakeService(), FakeSemantic(), lambda m, schema=None: json.dumps({"reason": next(answers)}))
+    assert not valid_blurb("Tình yêu cấm và sự thay đổi từ hài đến 悲剧.")
+    assert not valid_blurb("Một người đàn ông trở về quê hương tìm lại người con gái bị bỏ rơi, giữa lúc thị trấn "
+                           "cố cứu ngọn hải đăng cũ.")  # chép câu mẫu trong lời nhắc
+    good = json.dumps({"reason": "Ba anh em xoay xở với tình yêu."})
+    answers = iter([json.dumps({"reason": echo}), '{"reason": "lặp lặp lặp', json.dumps({"reason": "Một cựu杀手."}), good])
+    temps = []
+
+    def llm(m, schema=None, temperature=None):
+        temps.append(temperature)
+        return next(answers)
+    bot = Assistant(FakeService(), FakeSemantic(), llm)
     movie = FakeService()._movie(1)
-    assert bot.explain(movie) == "Ba anh em xoay xở với tình yêu."
-    bad = Assistant(FakeService(), FakeSemantic(), lambda m, schema=None: json.dumps({"reason": echo}))
-    assert bad.explain(movie) == "" and movie["item"] not in bad._blurbs
+    assert bot.explain(movie) == ""  # chép lời nhắc, JSON bị cắt, chữ Hán: cả ba lần đều hỏng
+    assert len(bot.rejected) == 3 and temps == [None, 0.6, 0.9]  # lần thử lại tăng temperature
+    assert bot.explain(movie) == "Ba anh em xoay xở với tình yêu."  # lần sau gọi lại thì được
+    bad = Assistant(FakeService(), FakeSemantic(), lambda m, schema=None, **kw: json.dumps({"reason": echo}))
+    assert bad.explain(movie) == "" and movie["title"] not in bad._blurbs
+
+
+def test_prewritten_blurbs_skip_llm(tmp_path):
+    """Câu viết sẵn được dùng ngay, kể cả khi không có LLM; câu hỏng trong tệp bị bỏ khi nạp."""
+    path = tmp_path / "blurbs.json"
+    save_blurbs(path, {"Laugh Out (1995)": "Một danh hài cố gượng cười.", "Ghost Hall (1999)": "dưới 25 từ"})
+    blurbs = load_blurbs(path)
+    assert blurbs == {"Laugh Out (1995)": "Một danh hài cố gượng cười."} and load_blurbs(tmp_path / "x.json") == {}
+    svc = FakeService()
+    bot = Assistant(svc, FakeSemantic(), None, blurbs=blurbs)
+    assert bot.explain(svc._movie(1)) == "Một danh hài cố gượng cười." and bot.explain(svc._movie(2)) == ""
