@@ -225,13 +225,16 @@ def clean_intent(raw: dict, genres: list[str]) -> dict:
 
 class Assistant:
     def __init__(self, service, semantic=None, llm: LLM | None = None, k: int = 5,
-                 blurbs: dict[str, str] | None = None):
+                 blurbs: dict[str, str] | None = None, live_blurbs: bool | None = None):
         self.svc, self.semantic, self.llm, self.k = service, semantic, llm, k
         years = service.movies["title"].str.extract(r"\((\d{4})\)\s*$")[0]
         self.years = years.fillna(0).astype(int).to_numpy()
         self.genre_sets = [set(g.split("|")) for g in service.movies["genres"]]
         # câu giới thiệu đã viết, theo tên phim; nạp sẵn từ tệp viết trước thì lúc chat không phải gọi LLM cho bước này
         self._blurbs: dict[str, str] = dict(blurbs or {})
+        # Có bộ câu viết sẵn thì không viết thêm lúc chat: phim còn thiếu là phim mô hình đã viết hỏng ba lần lúc
+        # chạy build_blurbs.py, gọi lại chỉ làm người dùng chờ thêm tới ~45 giây mà nhiều khả năng vẫn hỏng.
+        self.live_blurbs = not self._blurbs if live_blurbs is None else live_blurbs
         self.rejected: list[tuple[str, str]] = []  # (tên phim, câu bị loại) để kiểm tra chất lượng
 
     # ---------- bước 1: hiểu câu chat ----------
@@ -303,7 +306,7 @@ class Assistant:
         if movie["title"] in self._blurbs:
             return self._blurbs[movie["title"]]
         overview = str(movie.get("overview") or "").strip()
-        if self.llm is None or not overview:
+        if self.llm is None or not overview or not self.live_blurbs:
             return ""
         info = f"Phim: {movie['title']}\nThể loại: {movie['genres'].replace('|', ', ')}\nMô tả: {overview[:400]}"
         # Mô hình nhỏ đôi khi chép lại câu hướng dẫn, chen chữ Hán, hoặc lặp từ tới khi bị cắt giữa chừng (JSON hỏng):

@@ -172,3 +172,7 @@ def test_prewritten_blurbs_skip_llm(tmp_path):
     svc = FakeService()
     bot = Assistant(svc, FakeSemantic(), None, blurbs=blurbs)
     assert bot.explain(svc._movie(1)) == "Một danh hài cố gượng cười." and bot.explain(svc._movie(2)) == ""
+    calls = []
+    with_llm = Assistant(svc, FakeSemantic(), lambda m, schema=None, **kw: calls.append(1) or '{"reason": "X"}',
+                         blurbs=blurbs)
+    assert with_llm.explain(svc._movie(2)) == "" and calls == []  # có bộ câu viết sẵn: phim thiếu câu không gọi LLM

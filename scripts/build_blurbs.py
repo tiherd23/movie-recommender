@@ -35,7 +35,7 @@ def main() -> None:
         sys.exit(f"Chưa kết nối được Ollama với mô hình {args.model}. Mở Ollama (hoặc `ollama pull {args.model}`) rồi chạy lại.")
     svc = load_or_build(str(DEFAULT_ARTIFACT))
     blurbs = load_blurbs(args.out)
-    bot = Assistant(svc, None, client, blurbs=blurbs)
+    bot = Assistant(svc, None, client, blurbs=blurbs, live_blurbs=True)
 
     # phim phổ biến trước: dừng giữa chừng thì các phim hay được gợi ý nhất đã có câu
     order = np.argsort(-svc.pop)
