@@ -30,6 +30,19 @@ def test_service_uses_two_stage_when_enough_likes(service):
     assert np.mean([group(r["item"]) == 2 for r in recs]) >= 0.8
     few = svc.recommend(dict(list(liked.items())[:2]), k=5)  # ít phim thích -> công thức trộn
     assert all(r["method"] == "blend" for r in few)
+    assert all(1 <= len(r["why"]) <= 4 for r in recs) and not any("why" in r for r in few)
+
+
+def test_shap_contributions_add_up_to_ranker_score(service):
+    """Tổng giá trị SHAP theo nhóm (kể cả 'base') phải bằng đúng điểm của bộ xếp hạng."""
+    from movierec.ranker import grouped_contributions
+
+    svc, _ = service
+    liked = {i: 5 for i in range(8)}
+    als = svc.Y @ svc._fold_in(list(liked))
+    score, items, X = svc._rank_two_stage(liked, list(liked), als)
+    contrib = grouped_contributions(svc.ranker["booster"], X)
+    assert np.allclose(contrib.sum(axis=1).to_numpy(), score[items], atol=1e-4)
 
 
 def test_service_diversity_option(service):

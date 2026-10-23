@@ -1,0 +1,11 @@
+group,label,mean_abs,mean,top_share,gain_share
+als,Người có gu giống bạn cũng thích (Implicit ALS),0.4647,0.4647,0.9948,0.3639
+knn,Hay được xem cùng phim bạn đã chấm (ItemKNN),0.1151,0.1148,0.0047,0.1302
+user,Thói quen chấm điểm của bạn,0.051,0.0085,0.0,0.1417
+pop,Độ phổ biến của phim,0.0259,0.0223,0.0005,0.0984
+quality,Phim được đánh giá cao,0.0245,0.0097,0.0,0.0636
+sources,Được nhiều nguồn cùng đề cử,0.0204,0.0196,0.0,0.0089
+content,Nội dung gần với phim bạn thích,0.0143,0.01,0.0,0.0627
+item_genre,Bản thân thể loại của phim,0.0134,0.002,0.0,0.0347
+year,Năm phát hành,0.0105,0.0037,0.0,0.0626
+genre,Hợp thể loại bạn hay thích,0.0066,0.0039,0.0,0.0332

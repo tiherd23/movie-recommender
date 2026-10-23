@@ -101,8 +101,10 @@ class RecommenderService:
                 "poster_url": f"{IMAGE_BASE}{poster}" if poster else "",
                 "overview": row.get("overview", ""), **extra}
 
-    def _rank_two_stage(self, ratings: dict[int, int], liked: list[int], als_score: np.ndarray) -> np.ndarray:
-        """Điểm từ bộ xếp hạng hai tầng cho MỘT người dùng web (phim ngoài ứng viên = -inf).
+    def _rank_two_stage(self, ratings: dict[int, int], liked: list[int],
+                        als_score: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Điểm từ bộ xếp hạng hai tầng cho MỘT người dùng web (phim ngoài ứng viên = -inf), kèm chỉ số phim
+        ứng viên và ma trận đặc trưng của chúng (dùng để giải thích bằng SHAP).
         Đặc trưng được dựng bằng đúng hàm đã dùng lúc huấn luyện (candidate_features)."""
         from .ranker import candidate_features
 
@@ -127,6 +129,20 @@ class RecommenderService:
         out = np.full(len(self.movies), -np.inf, dtype=np.float32)
         booster = self.ranker["booster"]
         out[items] = booster.predict(X, num_iteration=booster.best_iteration)
+        return out, items, X
+
+    def _explain_two_stage(self, top, items: np.ndarray, X: np.ndarray, n: int = 4) -> list[list[tuple[str, float]]]:
+        """Với mỗi phim trong top: tối đa n nhóm đặc trưng ảnh hưởng mạnh nhất đến điểm (giá trị SHAP, + là đẩy lên).
+        Bỏ nhóm đặc điểm của người dùng vì nhóm này gần như như nhau cho mọi phim của cùng một người."""
+        from .ranker import FEATURE_GROUPS, grouped_contributions
+
+        pos = {int(j): r for r, j in enumerate(items)}
+        contrib = grouped_contributions(self.ranker["booster"], X[[pos[int(j)] for j in top]])
+        contrib = contrib.drop(columns=[c for c in ("base", "user") if c in contrib.columns])
+        out = []
+        for _, row in contrib.iterrows():
+            row = row[row.abs() >= 0.01].sort_values(key=np.abs, ascending=False)[:n]
+            out.append([(FEATURE_GROUPS[g], float(v)) for g, v in row.items()])
         return out
 
     def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12,
@@ -146,7 +162,7 @@ class RecommenderService:
         als_score = self.Y @ self._fold_in(liked) if liked else None
 
         if self.ranker is not None and len(liked) >= MIN_LIKED_FOR_RANKER:
-            score, method = self._rank_two_stage(ratings, liked, als_score), "two_stage"
+            (score, cand_items, cand_X), method = self._rank_two_stage(ratings, liked, als_score), "two_stage"
         else:
             method = "blend"
             score = np.zeros(len(self.movies), dtype=np.float32)
@@ -174,10 +190,10 @@ class RecommenderService:
             top = mmr_rerank(score, self._gvec, 1.0 - diversity, k) if np.isfinite(score).any() else []
         else:
             top = np.argsort(-score)[:k]
+        top = [int(j) for j in top if np.isfinite(score[j])]
+        why = self._explain_two_stage(top, cand_items, cand_X) if method == "two_stage" and top else [None] * len(top)
         out = []
-        for j in top:
-            if not np.isfinite(score[j]):
-                break
+        for j, factors in zip(top, why):
             row = self.movies.iloc[j]
             reason = "Đang được nhiều người thích"
             if knn_part is not None and knn_part[:, j].max() > 0:
@@ -185,7 +201,8 @@ class RecommenderService:
                 reason = f"Vì bạn thích {self.movies.iloc[src]['title']}"
             elif set(genres) & set(row["genres"].split("|")):
                 reason = "Hợp thể loại bạn chọn"
-            out.append(self._movie(int(j), score=float(score[j]), reason=reason, method=method))
+            extra = {"why": factors} if factors else {}
+            out.append(self._movie(int(j), score=float(score[j]), reason=reason, method=method, **extra))
         return out
 
     def similar(self, item: int, k: int = 8) -> list[dict]:

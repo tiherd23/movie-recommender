@@ -109,6 +109,10 @@ thiên lệch độ phổ biến rất rõ, TwoStage chỉ dành 0,8% vị trí 
 Xếp hạng lại bằng MMR theo thể loại với lambda 0,8: NDCG@10 giảm 0,6%, độ đa dạng thể loại (ILD) tăng 6%; web có lựa chọn
 "Độ đa dạng thể loại" với mặc định là mức này. Phạt độ phổ biến (beta 0,3) tăng độ phủ từ 29,1% lên 33,0%, NDCG@10 giảm 2,4%.
 
+Giải thích bộ xếp hạng bằng SHAP (`python scripts/explain_ranker.py` -> `results/shap_groups.csv`): với 10 phim được gợi ý,
+Implicit ALS là lý do đẩy lên mạnh nhất ở 99,5% số phim (trung bình |SHAP| 0,465, gấp 4 lần ItemKNN); độ quan trọng theo gain
+đánh giá quá cao các đặc trưng phụ như năm phát hành. Trên web, mỗi phim của kiến trúc hai tầng có mục "Vì sao gợi ý phim này?".
+
 Tạo lại bảng này bằng `python scripts/summarize.py`.
 
 ## Lộ trình
@@ -125,6 +129,7 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] LightGCN: NDCG@10 0.0857, xấp xỉ NeuMF, chưa vượt Implicit ALS
 - [x] Câu giới thiệu tiếng Việt viết sẵn cho mọi phim, trợ lý nhanh hơn khoảng 3 lần
 - [x] Độ đa dạng, độ mới, thiên lệch độ phổ biến; xếp hạng lại MMR và lựa chọn mức đa dạng trên web
+- [x] Giải thích từng gợi ý bằng giá trị SHAP của bộ xếp hạng LightGBM
 
 ## Nguồn dữ liệu
 

@@ -93,6 +93,17 @@ def rating_box(item: int, prefix: str, ratings: dict[int, int]) -> None:
                  key=key, label_visibility="collapsed", on_change=_save_rating, args=(item, key))
 
 
+def why_box(factors: list[tuple[str, float]]) -> None:
+    """Các nhóm đặc trưng ảnh hưởng mạnh nhất đến điểm của bộ xếp hạng (giá trị SHAP). Thanh dài theo độ lớn."""
+    top = max(abs(v) for _, v in factors)
+    for label, v in factors:
+        bar = "█" * max(1, round(6 * abs(v) / top))
+        color = "green" if v > 0 else "red"
+        st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {label}<br>"
+                    f"<span style='color:{color}'>{bar}</span> {v:+.2f}</span>", unsafe_allow_html=True)
+    st.caption("Giá trị SHAP của bộ xếp hạng LightGBM: dương là đẩy phim lên, âm là kéo xuống.")
+
+
 def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: int = 4) -> None:
     columns = st.columns(cols)
     for n, m in enumerate(movies):
@@ -107,6 +118,9 @@ def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: i
                 st.caption(m["overview"][:140] + ("…" if len(m["overview"]) > 140 else ""))
             if m.get("reason"):
                 st.caption(f"💡 {m['reason']}")
+            if m.get("why"):
+                with st.expander("Vì sao gợi ý phim này?"):
+                    why_box(m["why"])
             rating_box(m["item"], prefix, ratings)
 
 

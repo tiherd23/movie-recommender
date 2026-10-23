@@ -25,6 +25,41 @@ from .models.base import Recommender
 LIKE = 4.0
 
 
+# Nhóm đặc trưng để giải thích gợi ý cho người dùng (SHAP được cộng gộp trong từng nhóm)
+FEATURE_GROUPS = {
+    "als": "Người có gu giống bạn cũng thích (Implicit ALS)",
+    "knn": "Hay được xem cùng phim bạn đã chấm (ItemKNN)",
+    "content": "Nội dung gần với phim bạn thích",
+    "pop": "Độ phổ biến của phim",
+    "genre": "Hợp thể loại bạn hay thích",
+    "quality": "Phim được đánh giá cao",
+    "year": "Năm phát hành",
+    "item_genre": "Bản thân thể loại của phim",
+    "sources": "Được nhiều nguồn cùng đề cử",
+    "user": "Thói quen chấm điểm của bạn",
+}
+
+
+def feature_group(name: str) -> str:
+    """Khóa nhóm (trong FEATURE_GROUPS) của một đặc trưng theo tên."""
+    for prefix in ("als", "knn", "content", "pop"):
+        if name.startswith(prefix + "_"):
+            return prefix
+    return {"i_log_n": "pop", "genre_affinity": "genre", "i_mean": "quality", "i_like_frac": "quality",
+            "i_year": "year", "n_sources": "sources"}.get(name, "item_genre" if name.startswith("g_") else "user")
+
+
+def grouped_contributions(booster, X: np.ndarray) -> pd.DataFrame:
+    """Giá trị SHAP (TreeSHAP của LightGBM, pred_contrib=True) cộng gộp theo nhóm đặc trưng.
+    Mỗi dòng một cặp (người dùng, phim); tổng các cột + cột 'base' bằng đúng điểm của bộ xếp hạng."""
+    contrib = booster.predict(X, num_iteration=booster.best_iteration, pred_contrib=True)
+    names = booster.feature_name()
+    per_feature = pd.DataFrame(contrib[:, :-1], columns=names)
+    out = per_feature.T.groupby([feature_group(n) for n in names]).sum().T
+    out["base"] = contrib[:, -1]
+    return out[[g for g in FEATURE_GROUPS if g in out.columns] + ["base"]]
+
+
 def _zrows(s: np.ndarray) -> np.ndarray:
     return (s - s.mean(axis=1, keepdims=True)) / (s.std(axis=1, keepdims=True) + 1e-8)
 
