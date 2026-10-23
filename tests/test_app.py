@@ -32,6 +32,14 @@ def test_service_uses_two_stage_when_enough_likes(service):
     assert all(r["method"] == "blend" for r in few)
 
 
+def test_service_diversity_option(service):
+    svc, _ = service
+    liked = {i: 5 for i in range(8)}
+    base, div = svc.recommend(liked, k=8), svc.recommend(liked, k=8, diversity=0.4)
+    assert len(div) == 8 and div[0]["item"] == base[0]["item"]
+    assert all(r["item"] not in liked for r in div)
+
+
 def test_database_accounts_and_ratings(tmp_path):
     db = Database(tmp_path / "app.db")
     uid = db.register("phu", "matkhau")

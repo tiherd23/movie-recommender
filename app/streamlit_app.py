@@ -23,6 +23,7 @@ SEMANTIC = os.environ.get("MOVIEREC_SEMANTIC", str(ROOT / "artifacts" / "semanti
 LLM_MODEL = os.environ.get("MOVIEREC_LLM", "qwen3:4b")
 BLURBS_PATH = os.environ.get("MOVIEREC_BLURBS", str(ROOT / "artifacts" / "blurbs_vi.json"))
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
+DIVERSITY = {"Không": 0.0, "Nhẹ": 0.2, "Vừa": 0.4, "Mạnh": 0.6}  # 1 - lam của MMR
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
 st.set_page_config(page_title="MovieRec", page_icon="🎬", layout="wide")
@@ -160,9 +161,14 @@ def page_home(ratings: dict[int, int]) -> None:
         onboarding = []
 
     st.subheader("Top phim dành cho bạn")
+    # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) chỉ giảm NDCG@10 của kiến trúc
+    # hai tầng 0,6% nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
+    level = st.radio("Độ đa dạng thể loại", list(DIVERSITY), index=1, horizontal=True, key="diversity",
+                     help="Cao hơn: danh sách trải đều nhiều thể loại hơn, đổi lại độ chính xác giảm nhẹ.")
     # Người mới: gợi ý chủ yếu là phim phổ biến, nên bỏ các phim vừa hiện ở lưới phía trên cho khỏi lặp
     shown = {m["item"] for m in onboarding}
-    recs = [m for m in svc.recommend(ratings, genres, k=12 + len(shown)) if m["item"] not in shown][:12]
+    recs = [m for m in svc.recommend(ratings, genres, k=12 + len(shown), diversity=DIVERSITY[level])
+            if m["item"] not in shown][:12]
     if recs and recs[0].get("method") == "two_stage":
         st.caption("Mô hình đang dùng: kiến trúc hai tầng (truy hồi ứng viên + xếp hạng lại bằng LightGBM).")
     else:

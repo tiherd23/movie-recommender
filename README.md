@@ -60,6 +60,7 @@ src/movierec/
     sasrec.py    SASRec: gợi ý theo chuỗi bằng Transformer (PyTorch)
   ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
   semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ (BGE-M3)
+  beyond.py      Độ đa dạng, độ mới, đuôi dài; xếp hạng lại MMR
   assistant.py   Trợ lý hội thoại: LLM cục bộ (Ollama) hiểu câu, các mô hình gợi ý chọn phim
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
@@ -103,6 +104,11 @@ Tìm phim theo mô tả tiếng Việt (BGE-M3 + độ phổ biến, 20 câu ki�
 Trợ lý hội thoại (qwen3:4b trên CPU, 24 câu): đúng loại yêu cầu 0.875, F1 thể loại 0.875, khoảng 7.6 giây mỗi câu.
 Câu giới thiệu tiếng Việt viết sẵn cho 3.639/3.673 phim có mô tả (99,1%): mỗi lượt chat trên web còn 12-17 giây (trước đó 42-50 giây).
 
+Ngoài độ chính xác (`python scripts/beyond_accuracy.py` -> `results/beyond.csv`, `mmr.csv`, `pop_penalty.csv`):
+thiên lệch độ phổ biến rất rõ, TwoStage chỉ dành 0,8% vị trí gợi ý cho 2.558 phim đuôi dài (69% kho phim), Gini 0,935.
+Xếp hạng lại bằng MMR theo thể loại với lambda 0,8: NDCG@10 giảm 0,6%, độ đa dạng thể loại (ILD) tăng 6%; web có lựa chọn
+"Độ đa dạng thể loại" với mặc định là mức này. Phạt độ phổ biến (beta 0,3) tăng độ phủ từ 29,1% lên 33,0%, NDCG@10 giảm 2,4%.
+
 Tạo lại bảng này bằng `python scripts/summarize.py`.
 
 ## Lộ trình
@@ -117,6 +123,8 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Lớp 3b: trợ lý hội thoại tiếng Việt (Ollama, qwen3:4b), SASRec và phép thử xáo trộn thứ tự
 - [x] Thí nghiệm bổ sung: SASRec huấn luyện trên chuỗi xáo trộn
 - [x] LightGCN: NDCG@10 0.0857, xấp xỉ NeuMF, chưa vượt Implicit ALS
+- [x] Câu giới thiệu tiếng Việt viết sẵn cho mọi phim, trợ lý nhanh hơn khoảng 3 lần
+- [x] Độ đa dạng, độ mới, thiên lệch độ phổ biến; xếp hạng lại MMR và lựa chọn mức đa dạng trên web
 
 ## Nguồn dữ liệu
 

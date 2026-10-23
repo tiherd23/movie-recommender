@@ -129,8 +129,12 @@ class RecommenderService:
         out[items] = booster.predict(X, num_iteration=booster.best_iteration)
         return out
 
-    def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12) -> list[dict]:
+    def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12,
+                  diversity: float = 0.0) -> list[dict]:
         """ratings: {chỉ số phim: số sao}. Trả về k phim chưa chấm, kèm lý do gợi ý.
+
+        diversity (0..1): mức đa dạng thể loại. > 0 thì xếp hạng lại 50 phim điểm cao nhất bằng MMR với
+        lam = 1 - diversity (xem movierec.beyond); 0 giữ nguyên thứ tự của mô hình.
 
         - Đủ MIN_LIKED_FOR_RANKER phim thích: dùng kiến trúc hai tầng (mô hình tốt nhất khi đánh giá).
         - Ít hơn: dùng công thức trộn, nơi thể loại đã chọn và độ phổ biến gánh phần thiếu dữ liệu.
@@ -162,8 +166,16 @@ class RecommenderService:
         if ratings:
             score[list(ratings)] = -np.inf  # không gợi ý lại phim đã chấm
 
+        if diversity > 0:
+            from .beyond import genre_vectors, mmr_rerank
+
+            if getattr(self, "_gvec", None) is None:  # tính một lần; bản dịch vụ đã lưu từ trước không có thuộc tính này
+                self._gvec = genre_vectors(self.movies["genres"].reset_index(drop=True))
+            top = mmr_rerank(score, self._gvec, 1.0 - diversity, k) if np.isfinite(score).any() else []
+        else:
+            top = np.argsort(-score)[:k]
         out = []
-        for j in np.argsort(-score)[:k]:
+        for j in top:
             if not np.isfinite(score[j]):
                 break
             row = self.movies.iloc[j]
