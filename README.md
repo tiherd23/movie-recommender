@@ -37,6 +37,7 @@ python scripts/eval_semantic.py            # so sánh 3 mô hình nhúng, lưu a
 winget install Ollama.Ollama               # rồi mở lại PowerShell
 ollama pull qwen3:4b
 python scripts/eval_assistant.py           # đánh giá khả năng hiểu câu của trợ lý -> results/assistant_eval.csv
+python scripts/build_blurbs.py             # viết sẵn câu giới thiệu tiếng Việt cho mọi phim (~7 giờ CPU, chạy tiếp được)
 ```
 
 ## Cấu trúc
@@ -100,6 +101,7 @@ khoảng 0.0626 (`results/sasrec_order.csv`); huấn luyện lại ngay từ đ�
 
 Tìm phim theo mô tả tiếng Việt (BGE-M3 + độ phổ biến, 20 câu kiểm tra): Hit@1 0.75, Hit@5 0.90, MRR 0.823.
 Trợ lý hội thoại (qwen3:4b trên CPU, 24 câu): đúng loại yêu cầu 0.875, F1 thể loại 0.875, khoảng 7.6 giây mỗi câu.
+Câu giới thiệu tiếng Việt viết sẵn cho 3.639/3.673 phim có mô tả (99,1%): mỗi lượt chat trên web còn 12-17 giây (trước đó 42-50 giây).
 
 Tạo lại bảng này bằng `python scripts/summarize.py`.
 
