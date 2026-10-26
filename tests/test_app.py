@@ -97,20 +97,24 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()
     assert not at.exception and at.title[0].value == "Gợi ý cho bạn"
-    assert any("Hãy chấm ít nhất" in i.value for i in at.info)  # màn hình cho người mới
+    assert [t.label for t in at.tabs] == ["⭐ Phim dành cho bạn", "🎞️ Chấm thêm phim"]  # người mới: có tab chấm phim
 
-    first_before = [s.key for s in at.selectbox if s.key.startswith("rec_")][0]
-    onboarding = [s for s in at.selectbox if s.key.startswith("onb_")]
-    onboarding[0].set_value(5).run()  # chấm 5 sao phim đầu tiên
+    rec_before = [f.key for f in at.feedback if f.key.startswith("rec_")]
+    onboarding = [f for f in at.feedback if f.key.startswith("onb_")]
+    assert len(onboarding) == 15 and len(rec_before) == 15
+    first = onboarding[0].key.split("_")[1]
+    onboarding[0].set_value(4).run()  # bấm ngôi sao thứ 5 của phim đầu tiên
     assert not at.exception
     db = Database(tmp_path / "web.db")
-    assert list(db.ratings(1).values()) == [5]  # đã lưu vào SQLite
-    rec_keys = [s.key for s in at.selectbox if s.key.startswith("rec_")]
-    assert len(rec_keys) == 12 and f"rec_{onboarding[0].key.split('_')[1]}" not in rec_keys
-    assert first_before  # danh sách gợi ý tồn tại trước và sau khi chấm
+    assert db.ratings(1) == {int(first): 5}  # đã lưu 5 sao vào SQLite
+    assert f"onb_{first}" not in [f.key for f in at.feedback]  # phim vừa chấm rời khỏi danh sách cần chấm
+    assert f"rec_{first}" not in [f.key for f in at.feedback if f.key.startswith("rec_")]
 
-    at.sidebar.radio(key="nav").set_value("Phim đã chấm").run()
-    assert not at.exception and len(at.dataframe) == 1
+    at.sidebar.radio(key="nav").set_value("🎞️ Phim đã chấm").run()
+    hist = [f for f in at.feedback if f.key.startswith("hist_")]
+    assert not at.exception and len(hist) == 1 and hist[0].value == 4
+    hist[0].set_value(None).run()  # bấm lại ngôi sao đang chọn: bỏ chấm
+    assert not at.exception and db.ratings(1) == {}
 
     # trang tìm theo mô tả: chưa có chỉ mục thì hiện hướng dẫn, không báo lỗi
     monkeypatch.setenv("MOVIEREC_SEMANTIC", str(tmp_path / "khong_ton_tai.npz"))
@@ -118,5 +122,5 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     at2.text_input(key="login_user").set_value("tester")
     at2.text_input(key="login_pw").set_value("12345")
     at2.button(key="login_btn").click().run()
-    at2.sidebar.radio(key="nav").set_value("Tìm theo mô tả").run()
+    at2.sidebar.radio(key="nav").set_value("💬 Tìm theo mô tả").run()
     assert not at2.exception and any("chưa được bật" in i.value for i in at2.info)
