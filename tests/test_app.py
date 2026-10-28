@@ -101,7 +101,7 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
 
     rec_before = [f.key for f in at.feedback if f.key.startswith("rec_")]
     onboarding = [f for f in at.feedback if f.key.startswith("onb_")]
-    assert len(onboarding) == 15 and len(rec_before) == 15
+    assert len(onboarding) == 18 and len(rec_before) == 18
     first = onboarding[0].key.split("_")[1]
     onboarding[0].set_value(4).run()  # bấm ngôi sao thứ 5 của phim đầu tiên
     assert not at.exception
@@ -110,7 +110,9 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     assert f"onb_{first}" not in [f.key for f in at.feedback]  # phim vừa chấm rời khỏi danh sách cần chấm
     assert f"rec_{first}" not in [f.key for f in at.feedback if f.key.startswith("rec_")]
 
-    at.sidebar.radio(key="nav").set_value("🎞️ Phim của tôi").run()
+    at.session_state["start_page"] = "phim-cua-toi"
+    at.run()
+    assert at.title[0].value == "Phim của tôi"
     hist = [f for f in at.feedback if f.key.startswith("hist_")]
     assert not at.exception and len(hist) == 1 and hist[0].value == 4
     hist[0].set_value(None).run()  # bấm lại ngôi sao đang chọn: bỏ chấm
@@ -122,7 +124,8 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     at2.text_input(key="login_user").set_value("tester")
     at2.text_input(key="login_pw").set_value("12345")
     at2.button(key="login_btn").click().run()
-    at2.sidebar.radio(key="nav").set_value("💬 Tìm theo mô tả").run()
+    at2.session_state["start_page"] = "tim-theo-mo-ta"
+    at2.run()
     assert not at2.exception and any("chưa được bật" in i.value for i in at2.info)
 
 
@@ -155,8 +158,12 @@ def test_guest_can_browse_but_not_rate(service, tmp_path, monkeypatch):
     at.button(key="guest_btn").click().run()
     assert not at.exception and at.title[0].value == "Gợi ý cho bạn"
     assert all(f.disabled for f in at.feedback) and len(at.feedback) > 0  # khách không chấm được
-    assert "🎞️ Phim của tôi" not in at.sidebar.radio(key="nav").options
-    at.sidebar.radio(key="nav").set_value("🔎 Tìm phim").run()
+    at.session_state["start_page"] = "phim-cua-toi"  # khách không có trang này: quay về trang gợi ý
+    at.run()
+    assert at.title[0].value == "Gợi ý cho bạn"
+    at.session_state["start_page"] = "tim-phim"
+    at.run()
+    assert at.title[0].value == "Tìm phim"
     at.text_input(key="search_q").set_value("movie 1").run()
     assert not at.exception
     assert Database(tmp_path / "web.db").stats()["users"] == 0  # không tạo tài khoản nào
@@ -167,11 +174,14 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.text_input(key="reg_user").set_value("tester")
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()
-    assert "🛠️ Quản trị" not in at.sidebar.radio(key="nav").options
+    at.session_state["start_page"] = "quan-tri"  # người dùng thường không có trang quản trị
+    at.run()
+    assert at.title[0].value == "Gợi ý cho bạn"
     at.button(key="logout_btn").click().run()
     at.text_input(key="reg_user").set_value("admin")
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()
-    at.sidebar.radio(key="nav").set_value("🛠️ Quản trị").run()
+    at.session_state["start_page"] = "quan-tri"
+    at.run()
     assert not at.exception and at.title[0].value == "Quản trị hệ thống"
-    assert at.metric[0].value == "2"  # hai tài khoản: tester và admin
+    assert [m.value for m in at.metric if m.label == "Người dùng"] == ["2"]  # hai tài khoản: tester và admin

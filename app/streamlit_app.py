@@ -30,8 +30,6 @@ ADMINS = {u.strip() for u in os.environ.get("MOVIEREC_ADMINS", "admin").split(",
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 DIVERSITY = {"Không": 0.0, "Nhẹ": 0.2, "Vừa": 0.4, "Mạnh": 0.6}  # 1 - lam của MMR
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
-PAGES = ["⭐ Gợi ý cho bạn", "🔎 Tìm phim", "💬 Tìm theo mô tả", "🤖 Trợ lý phim", "🎞️ Phim của tôi"]
-ADMIN_PAGE = "🛠️ Quản trị"
 
 # Thẻ phim cùng kích thước: poster tỉ lệ 2:3, tên tối đa 2 dòng, mô tả tối đa 3 dòng, để lưới phim thẳng hàng
 CSS = """<style>
@@ -234,7 +232,7 @@ def movie_card(m: dict, prefix: str, ratings: dict[int, int]) -> None:
                     why_box(m["why"])
 
 
-def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: int = 5) -> None:
+def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: int = 6) -> None:
     for start in range(0, len(movies), cols):  # mỗi hàng một st.columns riêng để các thẻ cùng hàng thẳng nhau
         for col, m in zip(st.columns(cols), movies[start:start + cols]):
             with col:
@@ -286,12 +284,11 @@ def _save_genres() -> None:
 
 
 def page_home(ratings: dict[int, int]) -> None:
-    st.title("Gợi ý cho bạn")
     cold = len(ratings) < MIN_RATINGS
     tab_rec, tab_rate = st.tabs(["⭐ Phim dành cho bạn", "🎞️ Chấm thêm phim"], key="home_tab",
                                 default="🎞️ Chấm thêm phim" if cold else "⭐ Phim dành cho bạn")
 
-    # Phim nổi tiếng chưa chấm, mỗi lần 15 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
+    # Phim nổi tiếng chưa chấm, mỗi lần 18 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
     with tab_rate:
         if is_guest():
             st.info("Bạn đang xem thử với tư cách khách. Đăng nhập (nút ở thanh bên) để chấm điểm các phim dưới đây.")
@@ -303,10 +300,10 @@ def page_home(ratings: dict[int, int]) -> None:
             st.caption("Phim nổi tiếng bạn chưa chấm. Chấm càng nhiều, gợi ý càng sát sở thích.")
         page = st.session_state.setdefault("rate_page", 0)
         pool = [m for m in svc.popular(300) if m["item"] not in ratings]
-        to_rate = pool[page * 15:(page + 1) * 15] or pool[:15]
+        to_rate = pool[page * 18:(page + 1) * 18] or pool[:18]
         movie_grid(to_rate, "onb", ratings)
         if st.button("Xem phim khác", key="more_to_rate", icon=":material/refresh:"):
-            st.session_state.rate_page = (page + 1) % max(1, len(pool) // 15)
+            st.session_state.rate_page = (page + 1) % max(1, len(pool) // 18)
             st.rerun()
 
     with tab_rec:
@@ -323,8 +320,8 @@ def page_home(ratings: dict[int, int]) -> None:
                                              "giảm nhẹ.")
         # Người mới: gợi ý chủ yếu là phim phổ biến, nên bỏ các phim đang hiện ở tab chấm phim cho khỏi lặp
         shown = {m["item"] for m in to_rate} if cold else set()
-        recs = [m for m in svc.recommend(ratings, genres, k=15 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
-                if m["item"] not in shown][:15]
+        recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
+                if m["item"] not in shown][:18]
         if recs and recs[0].get("method") == "two_stage":
             st.caption("Mô hình đang dùng: kiến trúc hai tầng (truy hồi ứng viên + xếp hạng lại bằng LightGBM). "
                        "Bấm “Vì sao?” để xem yếu tố nào đưa phim lên.")
@@ -335,7 +332,6 @@ def page_home(ratings: dict[int, int]) -> None:
 
 
 def page_search(ratings: dict[int, int]) -> None:
-    st.title("Tìm phim")
     query = st.text_input("Tên phim (tiếng Anh)", key="search_q", placeholder="ví dụ: matrix")
     results = svc.search(query)
     if query and not results:
@@ -354,11 +350,10 @@ def page_search(ratings: dict[int, int]) -> None:
                     st.caption(m["overview"])
                 rating_stars(m["item"], "search", ratings)
             with st.expander("Phim tương tự"):
-                movie_grid(svc.similar(m["item"], k=5), f"sim{m['item']}", ratings)
+                movie_grid(svc.similar(m["item"], k=6), f"sim{m['item']}", ratings)
 
 
 def page_semantic(ratings: dict[int, int]) -> None:
-    st.title("Tìm theo mô tả")
     st.write("Mô tả bộ phim bạn muốn xem bằng một câu tiếng Việt. Hệ thống so nghĩa của câu đó với nội dung "
              "từng phim, không cần trùng từ khóa hay biết tên phim.")
     index = get_semantic(SEMANTIC)
@@ -373,7 +368,7 @@ def page_semantic(ratings: dict[int, int]) -> None:
         st.caption("Gợi ý: “phi hành gia bị mắc kẹt ngoài không gian”, “thám tử điều tra kẻ giết người hàng loạt”, "
                    "“chuyện tình lãng mạn trên con tàu”.")
         return
-    hits = index.search(query, k=15, exclude=set(ratings) if hide_rated else None, popularity=svc.pop)
+    hits = index.search(query, k=18, exclude=set(ratings) if hide_rated else None, popularity=svc.pop)
     st.caption("Thứ tự kết hợp độ khớp nội dung với độ phổ biến của phim (phim quen thuộc hơn được ưu tiên khi nội dung "
                "gần giống nhau), nên đôi khi phim có độ khớp thấp hơn một chút vẫn đứng trước.")
     movies = [svc._movie(i, reason=f"Độ khớp nội dung: {score:.0%}") for i, score in hits]
@@ -381,7 +376,6 @@ def page_semantic(ratings: dict[int, int]) -> None:
 
 
 def page_assistant(ratings: dict[int, int]) -> None:
-    st.title("Trợ lý phim")
     bot = get_assistant(ARTIFACT, SEMANTIC, LLM_MODEL, BLURBS_PATH, _mtime(BLURBS_PATH))
     if bot.llm is None:  # Ollama có thể được mở sau khi web đã chạy: thử kết nối lại, không cần khởi động lại web
         from movierec.assistant import OllamaClient
@@ -427,7 +421,6 @@ def page_assistant(ratings: dict[int, int]) -> None:
 
 
 def page_history(ratings: dict[int, int]) -> None:
-    st.title("Phim của tôi")
     tab_rated, tab_watch = st.tabs([f"Đã chấm ({len(ratings)})",
                                     f"Muốn xem ({len(st.session_state.watch_set)})"])
     with tab_watch:
@@ -464,7 +457,6 @@ def _rated_tab(ratings: dict[int, int]) -> None:
 
 def page_admin(ratings: dict[int, int]) -> None:
     """Trang quản trị: số liệu sử dụng, người dùng, tình trạng các thành phần, nạp lại mô hình, xuất dữ liệu."""
-    st.title("Quản trị hệ thống")
     stats = db.stats()
     c = st.columns(5)
     c[0].metric("Người dùng", stats["users"])
@@ -536,7 +528,31 @@ def page_admin(ratings: dict[int, int]) -> None:
             st.rerun()
 
 
+def _header(title: str, ratings: dict[int, int]) -> None:
+    """Dòng đầu trang: tiêu đề bên trái, menu tài khoản bên phải (thay cho thanh bên)."""
+    liked = sum(r >= 4 for r in ratings.values())
+    left, right = st.columns([5, 1], vertical_alignment="center")
+    left.title(title)
+    with right:
+        if is_guest():
+            if st.button("Đăng nhập", key="login_from_guest", icon=":material/login:", type="primary", width="stretch"):
+                st.session_state.clear()
+                st.rerun()
+            return
+        with st.popover(st.session_state.username, icon=":material/account_circle:", width="stretch"):
+            st.metric("Số phim đã chấm", len(ratings))
+            if liked >= MIN_RATINGS:
+                st.caption("Chế độ gợi ý: **kiến trúc hai tầng**")
+            else:
+                st.caption(f"Chế độ gợi ý: **người mới**. Thích thêm {MIN_RATINGS - liked} phim (4-5 sao) "
+                           "để dùng kiến trúc hai tầng.")
+            if st.button("Đăng xuất", key="logout_btn", icon=":material/logout:", width="stretch"):
+                st.session_state.clear()
+                st.rerun()
+
+
 def main() -> None:
+    st.logo(str(ROOT / "app" / "assets" / "logo.svg"), size="large")
     st.markdown(CSS, unsafe_allow_html=True)
     if "user_id" not in st.session_state:
         page_auth()
@@ -544,32 +560,29 @@ def main() -> None:
     guest = is_guest()
     ratings = {} if guest else db.ratings(st.session_state.user_id)
     st.session_state.watch_set = set() if guest else set(db.watchlist(st.session_state.user_id))
-    liked = sum(r >= 4 for r in ratings.values())
-    pages = PAGES[:-1] if guest else PAGES + ([ADMIN_PAGE] if is_admin() else [])
-    with st.sidebar:
-        st.markdown(f"### 🎬 MovieRec\nXin chào, **{st.session_state.username}**")
-        page = st.radio("Trang", pages, key="nav", label_visibility="collapsed")
-        st.divider()
-        if guest:
-            st.caption("Bạn đang xem thử. Đăng nhập để chấm điểm, lưu phim muốn xem và nhận gợi ý cá nhân hóa.")
-            if st.button("Đăng nhập / Đăng ký", key="login_from_guest", icon=":material/login:", type="primary"):
-                st.session_state.clear()
-                st.rerun()
-        else:
-            st.metric("Số phim đã chấm", len(ratings))
-            if liked >= MIN_RATINGS:
-                st.caption("Chế độ gợi ý: **kiến trúc hai tầng**")
-            else:
-                st.caption(f"Chế độ gợi ý: **người mới**. Thích thêm {MIN_RATINGS - liked} phim (4-5 sao) "
-                           "để dùng kiến trúc hai tầng.")
-            if st.button("Đăng xuất", key="logout_btn", icon=":material/logout:"):
-                st.session_state.clear()
-                st.rerun()
-        st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API "
-                   "but is not endorsed or certified by TMDB.")
-    handlers = dict(zip(PAGES + [ADMIN_PAGE],
-                        [page_home, page_search, page_semantic, page_assistant, page_history, page_admin]))
-    handlers[page](ratings)
 
+    # Thanh điều hướng ngang ở đầu trang. Mỗi trang là một hàm không tham số bọc hàm page_* tương ứng.
+    specs = [(page_home, "Gợi ý cho bạn", ":material/recommend:", "goi-y"),
+             (page_search, "Tìm phim", ":material/search:", "tim-phim"),
+             (page_semantic, "Tìm theo mô tả", ":material/manage_search:", "tim-theo-mo-ta"),
+             (page_assistant, "Trợ lý phim", ":material/smart_toy:", "tro-ly")]
+    if not guest:
+        specs.append((page_history, "Phim của tôi", ":material/bookmarks:", "phim-cua-toi"))
+    if is_admin():
+        specs.append((page_admin, "Quản trị", ":material/admin_panel_settings:", "quan-tri"))
+    # trang mở khi vào địa chỉ gốc; start_page trong session_state cho phép mở thẳng một trang (dùng khi kiểm thử)
+    start = st.session_state.get("start_page", "goi-y")
+    start = start if start in {url for *_, url in specs} else "goi-y"
+
+    def page(fn, title, icon, url):
+        run = lambda: fn(ratings)  # noqa: E731
+        run.__name__ = url.replace("-", "_")
+        return st.Page(run, title=title, icon=icon, url_path=url, default=url == start)
+
+    current = st.navigation([page(*spec) for spec in specs], position="top")
+    _header("Quản trị hệ thống" if current.title == "Quản trị" else current.title, ratings)
+    current.run()
+    st.divider()
+    st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.")
 
 main()
