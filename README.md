@@ -38,6 +38,7 @@ winget install Ollama.Ollama               # rồi mở lại PowerShell
 ollama pull qwen3:4b
 python scripts/eval_assistant.py           # đánh giá khả năng hiểu câu của trợ lý -> results/assistant_eval.csv
 python scripts/build_blurbs.py             # viết sẵn câu giới thiệu tiếng Việt cho mọi phim (~7 giờ CPU, chạy tiếp được)
+python scripts/fetch_trailers.py           # mã trailer YouTube từ TMDB cho cửa sổ chi tiết phim (vài phút)
 ```
 
 ## Cấu trúc
@@ -61,12 +62,14 @@ src/movierec/
   ranker.py      Kiến trúc hai tầng: truy hồi ứng viên + xếp hạng lại bằng LightGBM
   semantic.py    Tìm phim theo ngữ nghĩa bằng mô hình nhúng đa ngôn ngữ (BGE-M3)
   beyond.py      Độ đa dạng, độ mới, đuôi dài; xếp hạng lại MMR
+  extras.py      Thông tin hiển thị thêm (trailer, đạo diễn, diễn viên, thời lượng)
   assistant.py   Trợ lý hội thoại: LLM cục bộ (Ollama) hiểu câu, các mô hình gợi ý chọn phim
   service.py     Gói mô hình cho web; gợi ý cho người dùng mới bằng fold-in, kèm lý do
   db.py          SQLite: tài khoản (mật khẩu băm PBKDF2) và đánh giá
   tmdb.py        Ghép phim MovieLens với TMDB theo tên + năm
 app/
-  streamlit_app.py  Web: đăng ký/đăng nhập, hỏi sở thích, gợi ý, tìm phim, tìm theo mô tả, trợ lý, lịch sử
+  streamlit_app.py  Web: đăng ký/đăng nhập, chế độ khách, chấm sao, gợi ý kèm "Vì sao?", chi tiết phim có trailer,
+                    tìm phim, tìm theo mô tả, trợ lý, phim của tôi (đã chấm, muốn xem), trang quản trị (tài khoản admin)
 scripts/         Tải dữ liệu, chỉnh siêu tham số, huấn luyện, đánh giá; gpu_check.py, gpu_monitor.ps1 kiểm tra GPU
 data/eval/       40 câu tìm theo mô tả và 24 câu hội thoại có nhãn, dùng để đánh giá
 tests/           Kiểm thử tự động (pytest)
@@ -130,6 +133,7 @@ Tạo lại bảng này bằng `python scripts/summarize.py`.
 - [x] Câu giới thiệu tiếng Việt viết sẵn cho mọi phim, trợ lý nhanh hơn khoảng 3 lần
 - [x] Độ đa dạng, độ mới, thiên lệch độ phổ biến; xếp hạng lại MMR và lựa chọn mức đa dạng trên web
 - [x] Giải thích từng gợi ý bằng giá trị SHAP của bộ xếp hạng LightGBM
+- [x] Giao diện mới: chấm sao một chạm, cửa sổ chi tiết có trailer, danh sách muốn xem, chế độ khách, trang quản trị
 
 ## Nguồn dữ liệu
 

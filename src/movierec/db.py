@@ -34,6 +34,12 @@ class Database:
                 rated_at REAL NOT NULL,
                 PRIMARY KEY (user_id, item)
             );
+            CREATE TABLE IF NOT EXISTS watchlist (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                item INTEGER NOT NULL,
+                added_at REAL NOT NULL,
+                PRIMARY KEY (user_id, item)
+            );
             """
         )
 
@@ -85,3 +91,45 @@ class Database:
             "SELECT item, rating FROM ratings WHERE user_id = ? ORDER BY rated_at DESC", (user_id,)
         ).fetchall()
         return {int(i): int(r) for i, r in rows}
+
+    # ---------- danh sách "muốn xem" ----------
+    def toggle_watch(self, user_id: int, item: int) -> bool:
+        """Thêm phim vào danh sách muốn xem, hoặc bỏ ra nếu đã có. Trả về True nếu phim đang ở trong danh sách."""
+        with self.conn:
+            if self.conn.execute("DELETE FROM watchlist WHERE user_id = ? AND item = ?", (user_id, item)).rowcount:
+                return False
+            self.conn.execute("INSERT INTO watchlist (user_id, item, added_at) VALUES (?, ?, ?)",
+                              (user_id, item, time.time()))
+            return True
+
+    def watchlist(self, user_id: int) -> list[int]:
+        rows = self.conn.execute("SELECT item FROM watchlist WHERE user_id = ? ORDER BY added_at DESC",
+                                 (user_id,)).fetchall()
+        return [int(r[0]) for r in rows]
+
+    # ---------- quản trị ----------
+    def stats(self) -> dict:
+        """Số liệu tổng quan cho trang quản trị."""
+        q = lambda sql: self.conn.execute(sql).fetchone()[0]  # noqa: E731
+        week = time.time() - 7 * 24 * 3600
+        return {"users": q("SELECT COUNT(*) FROM users"), "ratings": q("SELECT COUNT(*) FROM ratings"),
+                "avg_rating": q("SELECT AVG(rating) FROM ratings"), "watchlist": q("SELECT COUNT(*) FROM watchlist"),
+                "active_7d": self.conn.execute("SELECT COUNT(DISTINCT user_id) FROM ratings WHERE rated_at >= ?",
+                                               (week,)).fetchone()[0]}
+
+    def users_overview(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT u.id, u.username, u.created_at, COUNT(r.item), AVG(r.rating), MAX(r.rated_at) "
+            "FROM users u LEFT JOIN ratings r ON r.user_id = u.id GROUP BY u.id ORDER BY u.id").fetchall()
+        return [{"id": r[0], "username": r[1], "created_at": r[2], "n_ratings": r[3], "avg_rating": r[4],
+                 "last_rated": r[5]} for r in rows]
+
+    def all_ratings(self) -> list[tuple[int, int, int, float]]:
+        """(user_id, item, rating, rated_at) của mọi người dùng web, để thống kê hoặc xuất ra CSV."""
+        return [tuple(r) for r in self.conn.execute("SELECT user_id, item, rating, rated_at FROM ratings")]
+
+    def delete_user(self, user_id: int) -> None:
+        with self.conn:
+            for table in ("ratings", "watchlist"):
+                self.conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
