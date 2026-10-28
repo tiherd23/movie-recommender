@@ -83,7 +83,7 @@ def test_service_personalizes_for_new_user(service):
     assert all("Drama" in r["genres"] for r in cold)
     assert all(r["reason"] == "Hợp thể loại bạn chọn: Drama" for r in cold)
     top = svc.recommend({}, k=1)[0]
-    assert top["reason"].startswith("Hạng 1 về lượt thích")  # lý do phổ biến có số liệu
+    assert top["reason"].startswith("Hạng 1/")  # lý do phổ biến có số liệu
     assert svc.search("movie 12")[0]["title"].lower().startswith("movie 12")
     assert all(s["item"] != 0 for s in svc.similar(0))
 
@@ -182,9 +182,14 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.run()
     assert at.title[0].value == "Gợi ý cho bạn"
     at.button(key="logout_btn").click().run()
-    at.text_input(key="reg_user").set_value("admin")
+    at.text_input(key="reg_user").set_value("admin")  # tên quản trị không tự đăng ký được trên web
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()
+    assert "dành riêng" in at.error[0].value and Database(tmp_path / "web.db").stats()["users"] == 1
+    Database(tmp_path / "web.db").register("admin", "12345")  # như scripts/create_admin.py
+    at.text_input(key="login_user").set_value("admin")
+    at.text_input(key="login_pw").set_value("12345")
+    at.button(key="login_btn").click().run()
     at.session_state["start_page"] = "quan-tri"
     at.run()
     assert not at.exception and at.title[0].value == "Quản trị hệ thống"
@@ -204,3 +209,39 @@ def test_item_stats_match_ratings(service, fake_ml1m):
         assert abs(st["mean"] - g.loc[j, "mean"]) < 1e-3
         assert abs(st["like_frac"] - like.loc[j]) < 1e-4
     assert svc.stats(int(np.argmax(svc.pop)))["rank"] == 1
+
+
+def test_genres_count_in_two_stage_mode(service):
+    """Đã đủ phim thích (kiến trúc hai tầng) mà chọn thể loại thì ít nhất một nửa danh sách thuộc thể loại đó."""
+    import copy
+
+    svc = copy.copy(service[0])  # dữ liệu giả chỉ có Drama|Comedy: gán "Horror" cho nhóm phim người này không thích
+    group = lambda item: (item + 1) % 4
+    svc.movies = svc.movies.copy()
+    svc.movies["genres"] = ["Horror" if group(i) == 3 else g for i, g in enumerate(svc.movies["genres"])]
+    liked = dict(list({i: 5 for i in range(len(svc.movies)) if group(i) == 1}.items())[:6])
+    base = svc.recommend(liked, k=10)
+    assert base[0]["method"] == "two_stage"
+    target = "Horror"
+    assert sum(target in r["genres"] for r in base) < 5
+    recs = svc.recommend(liked, [target], k=10)
+    assert sum(target in r["genres"].split("|") for r in recs) >= 5
+    assert len({r["item"] for r in recs}) == 10 and not set(liked) & {r["item"] for r in recs}
+    assert recs[0]["item"] == base[0]["item"]  # phim mô hình chấm cao nhất vẫn đứng đầu
+    assert any(r["reason"] == f"Hợp thể loại bạn chọn: {target}" for r in recs)
+
+
+def test_search_ignores_case_articles_and_year():
+    from movierec.service import _norm_text, display_title
+
+    assert display_title("Matrix, The (1999)") == "The Matrix (1999)"
+    assert display_title("Usual Suspects, The (1995)", year=False) == "The Usual Suspects"
+    assert display_title("Toy Story (1995)") == "Toy Story (1995)"
+    assert _norm_text("Amélie, the MATRIX!") == ["amelie", "the", "matrix"]
+
+
+def test_search_matches_words(service):
+    svc, _ = service
+    first = svc.movies["title"].iloc[11]  # dữ liệu giả: "Movie 12 (...)"
+    assert svc.search(first.upper().replace("(", ""))[0]["title"] == first
+    assert svc.search("zzzz khong co") == [] and svc.search_all("   ")[1] == 0

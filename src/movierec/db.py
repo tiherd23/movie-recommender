@@ -43,10 +43,13 @@ class Database:
             """
         )
 
-    def register(self, username: str, password: str) -> int:
+    def register(self, username: str, password: str, reserved: set[str] | frozenset[str] = frozenset()) -> int:
+        """reserved: tên dành riêng (tài khoản quản trị), không cho tự đăng ký trên web; tạo bằng scripts/create_admin.py."""
         username = username.strip()
         if len(username) < 3 or len(password) < 4:
             raise ValueError("Tên đăng nhập cần ít nhất 3 ký tự, mật khẩu ít nhất 4 ký tự.")
+        if username.lower() in {r.lower() for r in reserved}:
+            raise ValueError("Tên đăng nhập này được dành riêng, hãy chọn tên khác.")
         salt = secrets.token_bytes(16)
         try:
             with self.conn:

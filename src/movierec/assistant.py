@@ -328,15 +328,33 @@ class Assistant:
             self.rejected.append((movie["title"], (text or str(out))[:300]))
         return ""
 
-    def write(self, message: str, movies: list[dict]) -> str:
-        """Lời đáp: câu mở đầu cố định + mỗi phim một dòng. Tên phim lấy từ dữ liệu, LLM chỉ viết câu giới thiệu."""
+    def intro(self, n: int, source: str, intent: dict | None = None) -> str:
+        """Câu mở đầu nói ĐÚNG cách phim được chọn, để không khẳng định "hợp yêu cầu" khi chỉ là gợi ý chung."""
+        intent = intent or {}
+        genres = intent.get("genres") or []
+        cond = f" thuộc thể loại {', '.join(genres)}" if genres else ""
+        if source == "semantic":
+            return f"Mình tìm được {n} phim có nội dung gần với mô tả của bạn{cond}:"
+        if source == "similar":
+            return f"Đây là {n} phim giống phim bạn nhắc tới nhất{cond}:"
+        wanted_meaning = intent.get("action") in ("describe", "similar") or bool(intent.get("description"))
+        if wanted_meaning:
+            why = ("Mình chưa tìm thấy phim bạn nhắc tới" if intent.get("action") == "similar" and self.semantic is not None
+                   else "Tính năng so nội dung mô tả đang tắt" if self.semantic is None
+                   else "Mình chưa so được nội dung mô tả")
+            return f"{why}, nên đây là {n} phim gợi ý theo sở thích của bạn{cond} (chưa chắc khớp mô tả):"
+        return f"Đây là {n} phim gợi ý theo sở thích của bạn{cond}:"
+
+    def write(self, message: str, movies: list[dict], source: str = "semantic", intent: dict | None = None) -> str:
+        """Lời đáp: câu mở đầu (theo cách chọn phim) + mỗi phim một dòng. Tên phim lấy từ dữ liệu,
+        LLM chỉ viết câu giới thiệu."""
         if not movies:
             return self._fallback_text(movies)
         lines = []
         for m in movies:
             reason = self.explain(m)
             lines.append(f"- **{m['title']}**" + (f": {reason}" if reason else ""))
-        return "\n".join([f"Mình tìm được {len(movies)} phim hợp với yêu cầu của bạn:", ""] + lines)
+        return "\n".join([self.intro(len(movies), source, intent), ""] + lines)
 
     # ---------- một lượt hội thoại ----------
     def reply(self, message: str, ratings: dict[int, int], state: dict | None = None,
@@ -359,7 +377,7 @@ class Assistant:
             movies, source = self.retrieve(intent, message, ratings, shown)
             if on_movies and movies:
                 on_movies(movies)
-            text = self.write(message, movies)
+            text = self.write(message, movies, source, intent)
             state["intent"] = intent
             shown.update(m["item"] for m in movies)
         history += [{"role": "user", "text": message}, {"role": "assistant", "text": text}]

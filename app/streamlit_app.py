@@ -5,6 +5,7 @@ Chạy:  streamlit run app/streamlit_app.py
 from __future__ import annotations
 
 import html
+import math
 import os
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from movierec.db import Database  # noqa: E402
-from movierec.service import DEFAULT_ARTIFACT, load_or_build  # noqa: E402
+from movierec.service import DEFAULT_ARTIFACT, GENRE_SHARE, display_title, load_or_build  # noqa: E402
 
 DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
 ARTIFACT = os.environ.get("MOVIEREC_ARTIFACT", str(DEFAULT_ARTIFACT))
@@ -46,8 +47,8 @@ CSS = """<style>
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .mr-badge{position:absolute;top:6px;left:6px;background:rgba(255,128,0,.95);color:#fff;font-size:.7rem;
   padding:2px 7px;border-radius:10px}
-.mr-reason{color:#ff9d3c;font-size:.74rem;margin-top:.35rem;height:1.3em;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
+.mr-reason{color:#ff9d3c;font-size:.74rem;line-height:1.3;margin-top:.35rem;height:2.6em;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 </style>"""
 
 st.set_page_config(page_title="MovieRec", page_icon="🎬", layout="wide")
@@ -169,7 +170,7 @@ def card_html(m: dict) -> str:
     reason = f'<div class="mr-reason" title="{e(m["reason"])}">💡 {e(m["reason"])}</div>' if m.get("reason") else ""
     badge = '<div class="mr-badge">🔖 Muốn xem</div>' if m["item"] in st.session_state.get("watch_set", set()) else ""
     poster = f'<div style="position:relative">{poster}{badge}</div>'
-    return (f'{poster}<div class="mr-title" title="{e(m["title"])}">{e(m["title"])}</div>'
+    return (f'{poster}<div class="mr-title" title="{e(display_title(m["title"]))}">{e(display_title(m["title"]))}</div>'
             f'<div class="mr-genres">{e(m["genres"].replace("|", " · "))}</div>'
             f'<div class="mr-stats" title="Số liệu MovieLens 1M: điểm trung bình · số lượt chấm · tỉ lệ chấm ≥ 4 sao">'
             f'{e(stats_line(m))}</div>'
@@ -201,7 +202,7 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
     if m.get("poster_url"):
         left.image(m["poster_url"].replace("/w342", "/w500"), width="stretch")
     with right:
-        st.subheader(m["title"])
+        st.subheader(display_title(m["title"]))
         st.caption(" · ".join(x for x in [m["genres"].replace("|", ", "), _info_line(movie_id)] if x))
         people = []
         if isinstance(extra.get("director"), str) and extra["director"]:
@@ -211,7 +212,8 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
         line = stats_line(m)
         if line:
             st_ = m["stats"]
-            people.append(f"**MovieLens:** {line} · " + f"hạng {st_['rank']:,}".replace(",", ".") + " về lượt thích")
+            people.append(f"**MovieLens:** {line} · " + f"hạng {st_['rank']:,}/{len(svc.pop):,}".replace(",", ".")
+                          + " về lượt thích")
         if people:
             st.markdown("  \n".join(people))
         if m["title"] in BLURBS:
@@ -283,7 +285,7 @@ def page_auth() -> None:
             pw = st.text_input("Mật khẩu", type="password", key="reg_pw")
             if st.form_submit_button("Tạo tài khoản", key="reg_btn", type="primary", width="stretch"):
                 try:
-                    uid = db.register(user, pw)
+                    uid = db.register(user, pw, reserved=ADMINS)
                 except ValueError as err:
                     st.error(str(err))
                 else:
@@ -303,18 +305,19 @@ def _save_genres() -> None:
 
 
 def page_home(ratings: dict[int, int]) -> None:
-    cold = len(ratings) < MIN_RATINGS
+    liked = sum(r >= 4 for r in ratings.values())
+    cold = liked < MIN_RATINGS  # đủ 5 phim THÍCH (4-5 sao) mới dùng kiến trúc hai tầng, không phải 5 phim đã chấm
     tab_rec, tab_rate = st.tabs(["⭐ Phim dành cho bạn", "🎞️ Chấm thêm phim"], key="home_tab",
-                                default="🎞️ Chấm thêm phim" if cold else "⭐ Phim dành cho bạn")
+                                default="🎞️ Chấm thêm phim" if cold and not is_guest() else "⭐ Phim dành cho bạn")
 
     # Phim nổi tiếng chưa chấm, mỗi lần 18 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
     with tab_rate:
         if is_guest():
             st.info("Bạn đang xem thử với tư cách khách. Đăng nhập (nút góc trên bên phải) để chấm điểm các phim dưới đây.")
         elif cold:
-            st.progress(len(ratings) / MIN_RATINGS,
-                        text=f"Đã chấm {len(ratings)}/{MIN_RATINGS} phim. Chấm những phim bạn đã xem để nhận gợi ý "
-                             "cá nhân hóa; thích từ 5 phim (4-5 sao) thì hệ thống chuyển sang kiến trúc hai tầng.")
+            st.progress(liked / MIN_RATINGS,
+                        text=f"Đã thích {liked}/{MIN_RATINGS} phim (chấm 4-5★), đã chấm tổng cộng {len(ratings)} phim. "
+                             f"Thích thêm {MIN_RATINGS - liked} phim nữa để nhận gợi ý cá nhân hóa đầy đủ.")
         else:
             st.caption("Phim nổi tiếng bạn chưa chấm. Chấm càng nhiều, gợi ý càng sát sở thích.")
         page = st.session_state.setdefault("rate_page", 0)
@@ -341,12 +344,16 @@ def page_home(ratings: dict[int, int]) -> None:
         shown = {m["item"] for m in to_rate} if cold else set()
         recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
                 if m["item"] not in shown][:18]
-        if recs and recs[0].get("method") == "two_stage":
-            st.caption("Mô hình đang dùng: kiến trúc hai tầng (truy hồi ứng viên + xếp hạng lại bằng LightGBM). "
+        if is_guest():
+            st.caption("Gợi ý cho khách dựa trên thể loại bạn chọn và độ phổ biến. "
+                       "Đăng nhập để chấm phim và nhận gợi ý riêng cho bạn.")
+        elif recs and recs[0].get("method") == "two_stage":
+            note = (f" Ít nhất {math.ceil(18 * GENRE_SHARE)}/18 phim thuộc thể loại bạn chọn." if genres else "")
+            st.caption(f"Gợi ý cá nhân hóa đầy đủ, dựa trên {liked} phim bạn thích.{note} "
                        "Bấm “Vì sao?” để xem yếu tố nào đưa phim lên.")
         else:
-            st.caption("Mô hình đang dùng: công thức trộn cho người mới. Thích từ 5 phim trở lên "
-                       "(chấm 4-5 sao) để chuyển sang kiến trúc hai tầng.")
+            st.caption(f"Gợi ý cơ bản theo thể loại bạn chọn và độ phổ biến. Thích thêm {MIN_RATINGS - liked} phim "
+                       "(chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
         movie_grid(recs, "rec", ratings)
 
 
@@ -354,14 +361,19 @@ def page_search(ratings: dict[int, int]) -> None:
     query = st.text_input("Tên phim (tiếng Anh)", key="search_q", placeholder="ví dụ: matrix")
     results = svc.search(query)
     if query and not results:
-        st.warning("Không tìm thấy phim nào.")
+        st.warning(f"Không có phim nào tên khớp “{query.strip()}”. Hãy thử tên tiếng Anh gốc (vd. “matrix”, "
+                   "“star wars”), bớt vài từ, hoặc dùng trang Tìm theo mô tả nếu chỉ nhớ nội dung phim.")
+    elif query:
+        total = svc.search_all(query)[1]
+        st.caption(f"{total:,} phim khớp".replace(",", ".") + (f", hiện {len(results)} phim phổ biến nhất." if total > len(results)
+                                                               else "."))
     for m in results:
         with st.container(border=True):
             poster, body = st.columns([1, 6])
             if m.get("poster_url"):
                 poster.image(m["poster_url"], width="stretch")
             with body:
-                st.markdown(f"**{m['title']}**")
+                st.markdown(f"**{display_title(m['title'])}**")
                 st.caption(m["genres"].replace("|", " · "))
                 if m["title"] in BLURBS:
                     st.write(BLURBS[m["title"]])
@@ -403,8 +415,10 @@ def page_assistant(ratings: dict[int, int]) -> None:
         if client.available():
             bot.llm = client
     if bot.llm is None:
-        st.warning(f"Chưa kết nối được Ollama với mô hình `{LLM_MODEL}`. Trợ lý vẫn tìm phim theo mô tả, "
-                   "nhưng chưa hiểu được điều kiện (thể loại, năm) và chưa viết lời giải thích. "
+        can = ("Trợ lý vẫn tìm phim theo nội dung mô tả, nhưng chưa hiểu được điều kiện (thể loại, năm) và chưa viết "
+               "lời giới thiệu." if bot.semantic is not None else
+               "Tìm theo mô tả cũng đang tắt, nên trợ lý chỉ đưa ra gợi ý theo sở thích của bạn.")
+        st.warning(f"Trợ lý đang chạy ở chế độ rút gọn: chưa kết nối được mô hình ngôn ngữ `{LLM_MODEL}`. {can} "
                    f"Hãy mở Ollama (và chạy `ollama pull {LLM_MODEL}` nếu chưa tải mô hình), rồi tải lại trang này.")
     else:
         st.caption(f"Mô hình ngôn ngữ: {LLM_MODEL} (chạy cục bộ qua Ollama). Phim do hệ thống gợi ý chọn, "
@@ -561,10 +575,10 @@ def _header(title: str, ratings: dict[int, int]) -> None:
         with st.popover(st.session_state.username, icon=":material/account_circle:", width="stretch"):
             st.metric("Số phim đã chấm", len(ratings))
             if liked >= MIN_RATINGS:
-                st.caption("Chế độ gợi ý: **kiến trúc hai tầng**")
+                st.caption(f"Đã thích {liked} phim · gợi ý **cá nhân hóa đầy đủ** (kiến trúc hai tầng)")
             else:
-                st.caption(f"Chế độ gợi ý: **người mới**. Thích thêm {MIN_RATINGS - liked} phim (4-5 sao) "
-                           "để dùng kiến trúc hai tầng.")
+                st.caption(f"Đã thích {liked}/{MIN_RATINGS} phim · gợi ý **cơ bản**. Thích thêm {MIN_RATINGS - liked} "
+                           "phim (chấm 4-5★) để được cá nhân hóa đầy đủ.")
             if st.button("Đăng xuất", key="logout_btn", icon=":material/logout:", width="stretch"):
                 st.session_state.clear()
                 st.rerun()
