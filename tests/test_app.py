@@ -81,7 +81,7 @@ def test_service_personalizes_for_new_user(service):
     assert len(svc.recommend({}, k=5)) == 5  # người chưa chấm gì vẫn có gợi ý
     cold = svc.recommend({}, ["Drama"], k=5)  # cold-start theo thể loại
     assert all("Drama" in r["genres"] for r in cold)
-    assert all(r["reason"] == "Hợp thể loại bạn chọn: Drama" for r in cold)
+    assert all(r["reason"] == "Hợp thể loại bạn chọn: Chính kịch" for r in cold)
     top = svc.recommend({}, k=1)[0]
     assert top["reason"].startswith("Hạng 1/")  # lý do phổ biến có số liệu
     assert svc.search("movie 12")[0]["title"].lower().startswith("movie 12")
@@ -130,7 +130,7 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     at2.button(key="login_btn").click().run()
     at2.session_state["start_page"] = "tim-theo-mo-ta"
     at2.run()
-    assert not at2.exception and any("chưa được bật" in i.value for i in at2.info)
+    assert not at2.exception and any("chưa sẵn sàng" in i.value for i in at2.info)
 
 
 def test_watchlist_and_admin_queries(tmp_path):
@@ -161,7 +161,8 @@ def test_guest_can_browse_but_not_rate(service, tmp_path, monkeypatch):
     at = _open_app(service, tmp_path, monkeypatch)
     at.button(key="guest_btn").click().run()
     assert not at.exception and at.title[0].value == "Gợi ý cho bạn"
-    assert all(f.disabled for f in at.feedback) and len(at.feedback) > 0  # khách không chấm được
+    assert len(at.feedback) == 0  # khách không chấm được: không có hàng sao
+    assert any("Đăng nhập để chấm điểm" in c.value for c in at.caption)
     at.session_state["start_page"] = "phim-cua-toi"  # khách không có trang này: quay về trang gợi ý
     at.run()
     assert at.title[0].value == "Gợi ý cho bạn"
@@ -193,7 +194,13 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.session_state["start_page"] = "quan-tri"
     at.run()
     assert not at.exception and at.title[0].value == "Quản trị hệ thống"
-    assert [m.value for m in at.metric if m.label == "Người dùng"] == ["2"]  # hai tài khoản: tester và admin
+    assert [m.value for m in at.metric if m.label == "Tài khoản"] == ["2"]  # hai tài khoản: tester và admin
+    at.button(key="FormSubmitter:delete_user_form-Xóa tài khoản").click().run()  # chưa xác nhận: chỉ cảnh báo
+    assert any("Tôi chắc chắn" in w.value for w in at.warning) and Database(tmp_path / "web.db").stats()["users"] == 2
+    at.checkbox[0].check()
+    at.button(key="FormSubmitter:delete_user_form-Xóa tài khoản").click().run()
+    assert not at.exception and Database(tmp_path / "web.db").stats()["users"] == 1
+    assert any("Đã xóa tài khoản “tester”" in m.value for m in at.success)
 
 
 def test_item_stats_match_ratings(service, fake_ml1m):
@@ -228,7 +235,7 @@ def test_genres_count_in_two_stage_mode(service):
     assert sum(target in r["genres"].split("|") for r in recs) >= 5
     assert len({r["item"] for r in recs}) == 10 and not set(liked) & {r["item"] for r in recs}
     assert recs[0]["item"] == base[0]["item"]  # phim mô hình chấm cao nhất vẫn đứng đầu
-    assert any(r["reason"] == f"Hợp thể loại bạn chọn: {target}" for r in recs)
+    assert any(r["reason"] == "Hợp thể loại bạn chọn: Kinh dị" for r in recs)
 
 
 def test_search_ignores_case_articles_and_year():

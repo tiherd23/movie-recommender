@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import html
 import math
+import re
 import os
 import sys
 from pathlib import Path
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from movierec.db import Database  # noqa: E402
-from movierec.service import DEFAULT_ARTIFACT, GENRE_SHARE, display_title, load_or_build  # noqa: E402
+from movierec.service import DEFAULT_ARTIFACT, GENRE_SHARE, GENRE_VI, display_title, genre_vi, load_or_build  # noqa: E402
 
 DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
 ARTIFACT = os.environ.get("MOVIEREC_ARTIFACT", str(DEFAULT_ARTIFACT))
@@ -30,6 +31,11 @@ TRAILERS_PATH = os.environ.get("MOVIEREC_TRAILERS", str(ROOT / "data" / "process
 ADMINS = {u.strip() for u in os.environ.get("MOVIEREC_ADMINS", "admin").split(",") if u.strip()}
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 DIVERSITY = {"Không": 0.0, "Nhẹ": 0.2, "Vừa": 0.4, "Mạnh": 0.6}  # 1 - lam của MMR
+# Kết quả đo trên tập test cho kiến trúc hai tầng, 10 phim mỗi người (results/mmr.csv, scripts/beyond_accuracy.py)
+DIVERSITY_HELP = ("Xếp lại 50 phim điểm cao nhất để danh sách trải đều nhiều thể loại hơn. Đo trên tập kiểm tra "
+                  "(10 phim mỗi người, so với “Không”): **Nhẹ** thêm 0,8 thể loại, độ chính xác NDCG@10 giảm 0,6%; "
+                  "**Vừa** thêm 1,8 thể loại, giảm 2,7%; **Mạnh** thêm 2,7 thể loại, giảm 8,4%.")
+TZ = "Asia/Ho_Chi_Minh"
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
 # Thẻ phim cùng kích thước: poster tỉ lệ 2:3, tên tối đa 2 dòng, mô tả tối đa 3 dòng, để lưới phim thẳng hàng
@@ -49,6 +55,13 @@ CSS = """<style>
   padding:2px 7px;border-radius:10px}
 .mr-reason{color:#ff9d3c;font-size:.74rem;line-height:1.3;margin-top:.35rem;height:2.6em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* màn hình hẹp (điện thoại): lưới phim 2 cột thay vì mỗi thẻ chiếm cả màn hình */
+@media (max-width: 640px){
+  [data-testid="stHorizontalBlock"]:has(.mr-poster, .mr-noposter){flex-wrap:wrap!important;gap:.6rem!important}
+  [data-testid="stHorizontalBlock"]:has(.mr-poster, .mr-noposter) > [data-testid="stColumn"]{
+    width:calc(50% - .3rem)!important;flex:1 1 calc(50% - .3rem)!important;min-width:calc(50% - .3rem)!important}
+  .mr-desc{display:none}
+}
 </style>"""
 
 st.set_page_config(page_title="MovieRec", page_icon="🎬", layout="wide")
@@ -123,6 +136,23 @@ def is_admin() -> bool:
 
 
 # ---------- thành phần dùng chung ----------
+def fmt(x: float, digits: int = 0) -> str:
+    """Số kiểu Việt Nam: 1.234,5 (dấu chấm hàng nghìn, dấu phẩy thập phân)."""
+    return f"{x:,.{digits}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+def to_local(seconds: pd.Series | float):
+    """Thời điểm Unix (giây, UTC) -> giờ Việt Nam."""
+    if isinstance(seconds, pd.Series):
+        return pd.to_datetime(seconds, unit="s", utc=True).dt.tz_convert(TZ)
+    return pd.Timestamp(seconds, unit="s", tz="UTC").tz_convert(TZ)
+
+
+def login_again() -> None:
+    st.session_state.clear()
+    st.rerun()
+
+
 def _save_rating(item: int, key: str) -> None:
     """st.feedback trả 0..4 (None khi bấm lại ngôi sao đang chọn để bỏ chấm); lưu thành 1..5 sao."""
     value = st.session_state[key]
@@ -132,19 +162,26 @@ def _save_rating(item: int, key: str) -> None:
 def rating_stars(item: int, prefix: str, ratings: dict[int, int]) -> None:
     """Hàng 5 ngôi sao, bấm một lần là lưu ngay vào SQLite rồi trang tự chạy lại. Khách chưa đăng nhập: bị khóa."""
     key = f"{prefix}_{item}"
+    if is_guest():
+        st.caption("☆ Đăng nhập để chấm điểm")
+        return
     st.feedback("stars", key=key, default=ratings[item] - 1 if item in ratings else None,
                 on_change=_save_rating, args=(item, key), disabled=is_guest())
 
 
 def why_box(factors: list[tuple[str, float]]) -> None:
-    """Các nhóm đặc trưng ảnh hưởng mạnh nhất đến điểm của bộ xếp hạng (giá trị SHAP). Thanh dài theo độ lớn."""
-    top = max(abs(v) for _, v in factors)
+    """Các yếu tố ảnh hưởng mạnh nhất đến thứ hạng của phim (giá trị SHAP của bộ xếp hạng, gộp theo nhóm đặc trưng),
+    hiện thành phần trăm đóng góp để người dùng không phải đọc giá trị SHAP thô."""
+    total = sum(abs(v) for _, v in factors) or 1.0
     for label, v in factors:
-        bar = "█" * max(1, round(6 * abs(v) / top))
+        share = abs(v) / total
+        label = re.sub(r"\s*\([^)]*\)$", "", label)  # bỏ tên thuật toán trong ngoặc
         color = "#00e054" if v > 0 else "#ff5c5c"
-        st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {label}<br>"
-                    f"<span style='color:{color}'>{bar}</span> {v:+.2f}</span>", unsafe_allow_html=True)
-    st.caption("Giá trị SHAP của bộ xếp hạng LightGBM: dương là đẩy phim lên, âm là kéo xuống.")
+        bar = "█" * max(1, round(8 * share))
+        st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {html.escape(label)}<br>"
+                    f"<span style='color:{color}'>{bar}</span> {share:.0%}</span>", unsafe_allow_html=True)
+    st.caption("Phần trăm cho biết mỗi yếu tố chiếm bao nhiêu trong lý do xếp hạng phim này; ▲ đẩy phim lên, "
+               "▼ kéo xuống. Tính bằng SHAP trên bộ xếp hạng.")
 
 
 def description(m: dict) -> str:
@@ -171,7 +208,7 @@ def card_html(m: dict) -> str:
     badge = '<div class="mr-badge">🔖 Muốn xem</div>' if m["item"] in st.session_state.get("watch_set", set()) else ""
     poster = f'<div style="position:relative">{poster}{badge}</div>'
     return (f'{poster}<div class="mr-title" title="{e(display_title(m["title"]))}">{e(display_title(m["title"]))}</div>'
-            f'<div class="mr-genres">{e(m["genres"].replace("|", " · "))}</div>'
+            f'<div class="mr-genres">{e(genre_vi(m["genres"], " · "))}</div>'
             f'<div class="mr-stats" title="Số liệu MovieLens 1M: điểm trung bình · số lượt chấm · tỉ lệ chấm ≥ 4 sao">'
             f'{e(stats_line(m))}</div>'
             f'<div class="mr-desc">{e(description(m))}</div>{reason}')
@@ -188,7 +225,7 @@ def _info_line(movie_id: int) -> str:
     if pd.notna(e.get("runtime")) and e["runtime"] > 0:
         parts.append(f"{int(e['runtime'])} phút")
     if pd.notna(e.get("vote_average")) and pd.notna(e.get("vote_count")) and e["vote_count"] > 0:
-        parts.append(f"TMDB {e['vote_average']:.1f}/10 ({int(e['vote_count']):,} lượt)".replace(",", "."))
+        parts.append(f"TMDB {fmt(e['vote_average'], 1)}/10 ({fmt(e['vote_count'])} lượt)")
     return " · ".join(parts)
 
 
@@ -203,17 +240,16 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
         left.image(m["poster_url"].replace("/w342", "/w500"), width="stretch")
     with right:
         st.subheader(display_title(m["title"]))
-        st.caption(" · ".join(x for x in [m["genres"].replace("|", ", "), _info_line(movie_id)] if x))
+        st.caption(" · ".join(x for x in [genre_vi(m["genres"]), _info_line(movie_id)] if x))
         people = []
         if isinstance(extra.get("director"), str) and extra["director"]:
-            people.append(f"**Đạo diễn:** {extra['director']}")
+            people.append(f"**Đạo diễn:** {', '.join(extra['director'].split('|'))}")
         if isinstance(extra.get("cast"), str) and extra["cast"]:
             people.append(f"**Diễn viên:** {', '.join(extra['cast'].split('|')[:5])}")
         line = stats_line(m)
         if line:
             st_ = m["stats"]
-            people.append(f"**MovieLens:** {line} · " + f"hạng {st_['rank']:,}/{len(svc.pop):,}".replace(",", ".")
-                          + " về lượt thích")
+            people.append(f"**MovieLens:** {line} · hạng {fmt(st_['rank'])}/{fmt(len(svc.pop))} về lượt thích")
         if people:
             st.markdown("  \n".join(people))
         if m["title"] in BLURBS:
@@ -222,14 +258,20 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
             st.caption(m["overview"])
         if is_guest():
             st.caption("Đăng nhập để chấm điểm và lưu phim vào danh sách muốn xem.")
+            if st.button("Đăng nhập", key=f"dlg_login_{item}", icon=":material/login:", type="primary"):
+                login_again()
         else:
             st.caption("Điểm của bạn")
             rating_stars(item, "dlg", ratings)
-            watching = item in st.session_state.get("watch_set", set())
-            if st.button("Bỏ khỏi danh sách muốn xem" if watching else "Thêm vào danh sách muốn xem",
+            watch_set = st.session_state.setdefault("watch_set", set())
+            if st.button("Bỏ khỏi danh sách muốn xem" if item in watch_set else "Thêm vào danh sách muốn xem",
                          key=f"watch_{item}", icon=":material/bookmark:"):
-                db.toggle_watch(st.session_state.user_id, item)
-                st.rerun()
+                added = db.toggle_watch(st.session_state.user_id, item)
+                (watch_set.add if added else watch_set.discard)(item)
+                name = display_title(m["title"])
+                st.toast(f"Đã thêm “{name}” vào Muốn xem" if added else f"Đã bỏ “{name}” khỏi Muốn xem",
+                         icon=":material/bookmark_added:" if added else ":material/bookmark_remove:")
+                st.rerun(scope="fragment")  # chỉ chạy lại cửa sổ chi tiết, cửa sổ không bị đóng
     key = extra.get("youtube_key") if hasattr(extra, "get") else None
     if isinstance(key, str) and key:
         st.markdown("**Trailer**")
@@ -239,6 +281,9 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
     for col, s in zip(cols, svc.similar(item, k=6)):
         with col:
             st.markdown(card_html({**s, "overview": ""}).split('<div class="mr-desc">')[0], unsafe_allow_html=True)
+            if st.button("Chi tiết", key=f"dlg_sim_{item}_{s['item']}", type="tertiary"):
+                st.session_state.open_item = s["item"]  # main() mở cửa sổ của phim này sau khi chạy lại
+                st.rerun()
 
 
 def movie_card(m: dict, prefix: str, ratings: dict[int, int]) -> None:
@@ -333,13 +378,13 @@ def page_home(ratings: dict[int, int]) -> None:
                   else db.get_genres(st.session_state.user_id))
         left, right = st.columns([3, 2], vertical_alignment="bottom")
         left.multiselect("Thể loại yêu thích", svc.genres, default=genres, key="genre_select",
-                         on_change=_save_genres, placeholder="Chọn vài thể loại bạn thích")
+                         on_change=_save_genres, placeholder="Chọn vài thể loại bạn thích",
+                         format_func=lambda g: GENRE_VI.get(g, g))
         # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) chỉ giảm NDCG@10 của kiến trúc
         # hai tầng 0,6% nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
         level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY), default="Nhẹ", key="diversity",
                                         required=True,
-                                        help="Cao hơn: danh sách trải đều nhiều thể loại hơn, đổi lại độ chính xác "
-                                             "giảm nhẹ.")
+                                        help=DIVERSITY_HELP)
         # Người mới: gợi ý chủ yếu là phim phổ biến, nên bỏ các phim đang hiện ở tab chấm phim cho khỏi lặp
         shown = {m["item"] for m in to_rate} if cold else set()
         recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
@@ -354,6 +399,8 @@ def page_home(ratings: dict[int, int]) -> None:
         else:
             st.caption(f"Gợi ý cơ bản theo thể loại bạn chọn và độ phổ biến. Thích thêm {MIN_RATINGS - liked} phim "
                        "(chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
+        n_genres = len({g for m in recs for g in m["genres"].split("|")})
+        st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
         movie_grid(recs, "rec", ratings)
 
 
@@ -374,7 +421,7 @@ def page_search(ratings: dict[int, int]) -> None:
                 poster.image(m["poster_url"], width="stretch")
             with body:
                 st.markdown(f"**{display_title(m['title'])}**")
-                st.caption(m["genres"].replace("|", " · "))
+                st.caption(genre_vi(m["genres"], " · ") + " · " + stats_line(m))
                 if m["title"] in BLURBS:
                     st.write(BLURBS[m["title"]])
                 if m.get("overview"):
@@ -389,12 +436,15 @@ def page_semantic(ratings: dict[int, int]) -> None:
              "từng phim, không cần trùng từ khóa hay biết tên phim.")
     index = get_semantic(SEMANTIC)
     if index is None:
-        st.info("Tính năng này chưa được bật. Cài thư viện bằng `pip install sentence-transformers` "
-                "rồi chạy `python scripts/build_semantic.py`, sau đó khởi động lại ứng dụng.")
+        st.info("Tính năng tìm theo mô tả tạm thời chưa sẵn sàng. Bạn có thể tìm theo tên ở trang “Tìm phim”, "
+                "hoặc hỏi “Trợ lý phim”.")
+        if is_admin():
+            st.caption("Quản trị: cài `pip install sentence-transformers`, chạy `python scripts/build_semantic.py` "
+                       "rồi bấm “Nạp lại mô hình và dữ liệu” ở trang Quản trị.")
         return
     query = st.text_input("Bạn muốn xem phim như thế nào?", key="semantic_q",
                           placeholder="ví dụ: phim hoạt hình vui nhộn cho trẻ em")
-    hide_rated = st.checkbox("Ẩn phim tôi đã chấm", value=True, key="semantic_hide")
+    hide_rated = not is_guest() and st.checkbox("Ẩn phim tôi đã chấm", value=True, key="semantic_hide")
     if not query.strip():
         st.caption("Gợi ý: “phi hành gia bị mắc kẹt ngoài không gian”, “thám tử điều tra kẻ giết người hàng loạt”, "
                    "“chuyện tình lãng mạn trên con tàu”.")
@@ -402,7 +452,9 @@ def page_semantic(ratings: dict[int, int]) -> None:
     hits = index.search(query, k=18, exclude=set(ratings) if hide_rated else None, popularity=svc.pop)
     st.caption("Thứ tự kết hợp độ khớp nội dung với độ phổ biến của phim (phim quen thuộc hơn được ưu tiên khi nội dung "
                "gần giống nhau), nên đôi khi phim có độ khớp thấp hơn một chút vẫn đứng trước.")
-    movies = [svc._movie(i, reason=f"Độ khớp nội dung: {score:.0%}") for i, score in hits]
+    st.caption("“Độ khớp” là độ tương đồng cosine giữa câu của bạn và nội dung phim, thang 0–1; từ khoảng 0,5 trở lên "
+               "là nội dung rất gần.")
+    movies = [svc._movie(i, reason=f"Độ khớp nội dung: {fmt(score, 2)}") for i, score in hits]
     movie_grid(movies, "sem", ratings)
 
 
@@ -418,15 +470,17 @@ def page_assistant(ratings: dict[int, int]) -> None:
         can = ("Trợ lý vẫn tìm phim theo nội dung mô tả, nhưng chưa hiểu được điều kiện (thể loại, năm) và chưa viết "
                "lời giới thiệu." if bot.semantic is not None else
                "Tìm theo mô tả cũng đang tắt, nên trợ lý chỉ đưa ra gợi ý theo sở thích của bạn.")
-        st.warning(f"Trợ lý đang chạy ở chế độ rút gọn: chưa kết nối được mô hình ngôn ngữ `{LLM_MODEL}`. {can} "
-                   f"Hãy mở Ollama (và chạy `ollama pull {LLM_MODEL}` nếu chưa tải mô hình), rồi tải lại trang này.")
+        st.warning(f"Trợ lý đang chạy ở chế độ rút gọn vì mô hình ngôn ngữ chưa sẵn sàng. {can}")
+        if is_admin():
+            st.caption(f"Quản trị: mở Ollama (và chạy `ollama pull {LLM_MODEL}` nếu chưa tải mô hình), rồi tải lại trang.")
     else:
         st.caption(f"Mô hình ngôn ngữ: {LLM_MODEL} (chạy cục bộ qua Ollama). Phim do hệ thống gợi ý chọn, "
                    "mô hình ngôn ngữ chỉ hiểu yêu cầu và viết lời giải thích.")
     chat = st.session_state.setdefault("chat", [])        # các lượt để hiển thị
     state = st.session_state.setdefault("chat_state", {})  # ngữ cảnh của trợ lý giữa các lượt
-    if st.button("Xóa hội thoại", key="chat_clear") and chat:
+    if chat and st.button("Xóa hội thoại", key="chat_clear", icon=":material/delete_sweep:"):
         chat.clear(); state.clear()
+        st.rerun()
     if not chat:
         st.caption("Thử: “phim kinh dị thập niên 90 về ngôi nhà ma ám”, “phim nào giống Toy Story”, "
                    "“gợi ý phim hài, đừng có lãng mạn”, rồi hỏi tiếp “còn phim nào khác không”.")
@@ -474,9 +528,10 @@ def _rated_tab(ratings: dict[int, int]) -> None:
     genre_count = pd.Series([g for i in ratings for g in svc.movies.iloc[i]["genres"].split("|")]).value_counts()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Số phim đã chấm", len(ratings))
-    c2.metric("Điểm trung bình", f"{sum(ratings.values()) / len(ratings):.1f} ★".replace(".", ","))
+    c2.metric("Điểm trung bình", f"{fmt(sum(ratings.values()) / len(ratings), 1)} ★")
     c3.metric("Số phim thích (4-5 sao)", sum(r >= 4 for r in ratings.values()))
-    c4.metric("Thể loại chấm nhiều nhất", genre_count.index[0])
+    c4.metric("Thể loại chấm nhiều nhất", GENRE_VI.get(genre_count.index[0], genre_count.index[0]),
+              help=f"{genre_count.iloc[0]}/{len(ratings)} phim bạn đã chấm thuộc thể loại này")
     order = st.segmented_control("Sắp xếp", ["Điểm cao trước", "Điểm thấp trước", "Tên phim"],
                                  default="Điểm cao trước", key="hist_order", required=True)
     items = list(ratings)
@@ -490,15 +545,24 @@ def _rated_tab(ratings: dict[int, int]) -> None:
 
 def page_admin(ratings: dict[int, int]) -> None:
     """Trang quản trị: số liệu sử dụng, người dùng, tình trạng các thành phần, nạp lại mô hình, xuất dữ liệu."""
+    if msg := st.session_state.pop("admin_msg", None):
+        st.success(msg)
     stats = db.stats()
     c = st.columns(5)
-    c[0].metric("Người dùng", stats["users"])
-    c[1].metric("Lượt chấm điểm", stats["ratings"])
-    c[2].metric("Điểm trung bình", "–" if stats["avg_rating"] is None else f"{stats['avg_rating']:.2f}".replace(".", ","))
-    c[3].metric("Hoạt động 7 ngày qua", stats["active_7d"])
-    c[4].metric("Lượt lưu muốn xem", stats["watchlist"])
+    c[0].metric("Tài khoản", stats["users"], help="Số tài khoản đã đăng ký trên web, kể cả tài khoản quản trị.")
+    c[1].metric("Lượt chấm trên web", fmt(stats["ratings"]),
+                help="Chỉ tính lượt chấm của người dùng web, không gồm 1 triệu lượt của MovieLens.")
+    c[2].metric("Điểm trung bình", "–" if stats["avg_rating"] is None else f"{fmt(stats['avg_rating'], 2)} ★ / 5",
+                help="Trung bình mọi lượt chấm trên web.")
+    c[3].metric("Người chấm phim trong 7 ngày", stats["active_7d"],
+                help="Số tài khoản có ít nhất một lượt chấm trong 7 ngày gần nhất.")
+    c[4].metric("Lượt lưu Muốn xem", stats["watchlist"], help="Tổng số phim được lưu vào danh sách Muốn xem.")
 
     all_r = pd.DataFrame(db.all_ratings(), columns=["user_id", "item", "rating", "rated_at"])
+    users = pd.DataFrame(db.users_overview())
+    for col in ("avg_rating", "last_rated"):  # người chưa chấm phim nào: SQLite trả None
+        users[col] = pd.to_numeric(users[col], errors="coerce")
+    names = users.set_index("id")["username"]
     tab_use, tab_users, tab_sys = st.tabs(["Hoạt động", "Người dùng", "Hệ thống"])
     with tab_use:
         if all_r.empty:
@@ -513,32 +577,44 @@ def page_admin(ratings: dict[int, int]) -> None:
             with right:
                 st.markdown("**Phim được chấm nhiều nhất**")
                 top = all_r.groupby("item")["rating"].agg(["count", "mean"]).sort_values("count", ascending=False)[:10]
-                st.dataframe(pd.DataFrame({"Phim": [svc.movies.iloc[i]["title"] for i in top.index],
+                st.dataframe(pd.DataFrame({"Phim": [display_title(svc.movies.iloc[i]["title"]) for i in top.index],
                                            "Lượt chấm": top["count"].to_numpy(),
-                                           "Điểm TB": top["mean"].round(2).to_numpy()}),
+                                           "Điểm TB": [f"{fmt(v, 2)} ★" for v in top["mean"]]}),
                              hide_index=True, width="stretch")
-            st.download_button("Tải toàn bộ lượt chấm (CSV)", all_r.to_csv(index=False).encode("utf-8"),
-                               "movierec_ratings.csv", "text/csv", icon=":material/download:")
+            export = pd.DataFrame({
+                "username": all_r["user_id"].map(names),
+                "movie_id": svc.movies["movie_id"].to_numpy()[all_r["item"]],
+                "title": svc.movies["title"].to_numpy()[all_r["item"]],
+                "rating": all_r["rating"],
+                "rated_at": to_local(all_r["rated_at"]).dt.strftime("%Y-%m-%d %H:%M:%S%z"),
+            })
+            st.download_button("Tải toàn bộ lượt chấm (CSV)", export.to_csv(index=False).encode("utf-8-sig"),
+                               "movierec_ratings.csv", "text/csv", icon=":material/download:",
+                               help="Cột: tên đăng nhập, mã phim MovieLens, tên phim, số sao, thời điểm (giờ Việt Nam).")
     with tab_users:
-        users = pd.DataFrame(db.users_overview())
-        for col in ("avg_rating", "last_rated"):  # người chưa chấm phim nào: SQLite trả None
-            users[col] = pd.to_numeric(users[col], errors="coerce")
-        show = users.assign(
-            created_at=pd.to_datetime(users["created_at"], unit="s").dt.strftime("%d/%m/%Y"),
-            avg_rating=users["avg_rating"].round(2),
-            last_rated=pd.to_datetime(users["last_rated"], unit="s").dt.strftime("%d/%m/%Y %H:%M"))
-        st.dataframe(show.rename(columns={"id": "ID", "username": "Tên đăng nhập", "created_at": "Ngày tạo",
-                                          "n_ratings": "Số phim đã chấm", "avg_rating": "Điểm TB",
-                                          "last_rated": "Lần chấm gần nhất"}), hide_index=True, width="stretch")
+        show = pd.DataFrame({
+            "ID": users["id"], "Tên đăng nhập": users["username"],
+            "Ngày tạo": to_local(users["created_at"]).dt.strftime("%d/%m/%Y"),
+            "Số phim đã chấm": users["n_ratings"],
+            "Điểm TB": [f"{fmt(v, 2)} ★" if pd.notna(v) else "–" for v in users["avg_rating"]],
+            "Lần chấm gần nhất": to_local(users["last_rated"]).dt.strftime("%d/%m/%Y %H:%M").fillna("Chưa chấm"),
+        })
+        st.dataframe(show, hide_index=True, width="stretch")
+        st.caption("Giờ Việt Nam (UTC+7).")
         others = users[users["id"] != st.session_state.user_id]
         if not others.empty:
             with st.form("delete_user_form"):
                 who = st.selectbox("Xóa tài khoản (kèm toàn bộ lượt chấm và danh sách muốn xem)",
-                                   others["id"], format_func=lambda i: users.set_index("id").loc[i, "username"])
+                                   others["id"], format_func=lambda i: names.loc[i])
                 sure = st.checkbox("Tôi chắc chắn muốn xóa tài khoản này")
-                if st.form_submit_button("Xóa tài khoản", type="primary") and sure:
-                    db.delete_user(int(who))
-                    st.rerun()
+                if st.form_submit_button("Xóa tài khoản", type="primary"):
+                    if not sure:
+                        st.warning("Hãy đánh dấu “Tôi chắc chắn muốn xóa tài khoản này” để xác nhận.")
+                    else:
+                        n = int(users.set_index("id").loc[who, "n_ratings"])
+                        db.delete_user(int(who))
+                        st.session_state.admin_msg = f"Đã xóa tài khoản “{names.loc[who]}” và {n} lượt chấm của tài khoản này."
+                        st.rerun()
     with tab_sys:
         semantic_ok = Path(SEMANTIC).exists()
         trailers = int(EXTRAS["youtube_key"].notna().sum()) if "youtube_key" in EXTRAS else 0
@@ -546,7 +622,7 @@ def page_admin(ratings: dict[int, int]) -> None:
 
         rows = [("Số phim trong kho", f"{len(svc.movies):,}".replace(",", ".")),
                 ("Bộ xếp hạng hai tầng", "đã nạp" if svc.ranker is not None else "chưa có (chỉ dùng công thức trộn)"),
-                ("Mô hình gợi ý cập nhật lúc", pd.Timestamp(_mtime(ARTIFACT), unit="s").strftime("%d/%m/%Y %H:%M")
+                ("Mô hình gợi ý cập nhật lúc", to_local(_mtime(ARTIFACT)).strftime("%d/%m/%Y %H:%M (giờ VN)")
                  if _mtime(ARTIFACT) else "–"),
                 ("Chỉ mục tìm theo mô tả", "có" if semantic_ok else "chưa dựng (scripts/build_semantic.py)"),
                 ("Lời giới thiệu tiếng Việt", f"{len(BLURBS):,} phim".replace(",", ".")),
@@ -569,8 +645,7 @@ def _header(title: str, ratings: dict[int, int]) -> None:
     with right:
         if is_guest():
             if st.button("Đăng nhập", key="login_from_guest", icon=":material/login:", type="primary", width="stretch"):
-                st.session_state.clear()
-                st.rerun()
+                login_again()
             return
         with st.popover(st.session_state.username, icon=":material/account_circle:", width="stretch"):
             st.metric("Số phim đã chấm", len(ratings))
@@ -615,6 +690,8 @@ def main() -> None:
     current = st.navigation([page(*spec) for spec in specs], position="top")
     _header("Quản trị hệ thống" if current.title == "Quản trị" else current.title, ratings)
     current.run()
+    if (item := st.session_state.pop("open_item", None)) is not None:  # bấm "Chi tiết" ở phim tương tự trong cửa sổ
+        movie_dialog(item, ratings)
     st.divider()
     st.caption("Poster và mô tả phim lấy từ TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.")
 

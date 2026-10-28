@@ -24,6 +24,8 @@ from typing import Callable
 
 import numpy as np
 
+from .service import genre_vi
+
 DEFAULT_LLM = os.environ.get("MOVIEREC_LLM", "qwen3:4b")
 DEFAULT_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 ACTIONS = ["describe", "similar", "recommend", "chat"]
@@ -332,7 +334,7 @@ class Assistant:
         """Câu mở đầu nói ĐÚNG cách phim được chọn, để không khẳng định "hợp yêu cầu" khi chỉ là gợi ý chung."""
         intent = intent or {}
         genres = intent.get("genres") or []
-        cond = f" thuộc thể loại {', '.join(genres)}" if genres else ""
+        cond = f" thuộc thể loại {genre_vi(genres)}" if genres else ""
         if source == "semantic":
             return f"Mình tìm được {n} phim có nội dung gần với mô tả của bạn{cond}:"
         if source == "similar":

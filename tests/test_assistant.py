@@ -123,7 +123,7 @@ def test_description_always_searches_by_meaning():
     assert out["source"] == "semantic" and [m["item"] for m in out["movies"]] == [2, 5]
     out = Assistant(svc, FakeSemantic(), make_llm(base(action="recommend", genres=["Comedy"])), k=2).reply("x", {})
     assert out["source"] == "recommend" and [m["item"] for m in out["movies"]] == [1, 4]  # không mô tả: gợi ý cá nhân hóa + lọc thể loại
-    assert out["text"].startswith("Đây là 2 phim gợi ý theo sở thích của bạn thuộc thể loại Comedy")
+    assert out["text"].startswith("Đây là 2 phim gợi ý theo sở thích của bạn thuộc thể loại Hài")
 
 
 def test_ollama_client_retries_once_on_connection_error():

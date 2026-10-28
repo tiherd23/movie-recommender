@@ -26,6 +26,22 @@ LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
 MIN_LIKED_FOR_RANKER = 5  # đủ số phim thích mới dùng bộ xếp hạng hai tầng; ít hơn thì dùng công thức trộn
 GENRE_SHARE = 0.5  # đã chọn thể loại thì ít nhất nửa danh sách (kiến trúc hai tầng) thuộc các thể loại đó
 
+# Tên tiếng Việt của 18 thể loại MovieLens (chỉ để hiển thị; dữ liệu và mô hình vẫn dùng tên gốc)
+GENRE_VI = {
+    "Action": "Hành động", "Adventure": "Phiêu lưu", "Animation": "Hoạt hình", "Children's": "Thiếu nhi",
+    "Comedy": "Hài", "Crime": "Hình sự", "Documentary": "Tài liệu", "Drama": "Chính kịch", "Fantasy": "Giả tưởng",
+    "Film-Noir": "Phim đen (noir)", "Horror": "Kinh dị", "Musical": "Nhạc kịch", "Mystery": "Bí ẩn",
+    "Romance": "Lãng mạn", "Sci-Fi": "Khoa học viễn tưởng", "Thriller": "Giật gân", "War": "Chiến tranh",
+    "Western": "Miền Tây",
+}
+
+
+def genre_vi(genres: str | list[str], sep: str = ", ") -> str:
+    """"Comedy|Drama" hoặc ["Comedy", "Drama"] -> "Hài, Chính kịch"."""
+    names = genres.split("|") if isinstance(genres, str) else genres
+    return sep.join(GENRE_VI.get(g, g) for g in names if g)
+
+
 _ARTICLE = re.compile(r"^(?P<base>.*?), (?P<art>The|A|An)(?P<alt>\s*\(.*\))?\s*(?P<year>\(\d{4}\))$")
 
 
@@ -240,12 +256,12 @@ class RecommenderService:
             row = self.movies.iloc[j]
             match = [g for g in genres if g in row["genres"].split("|")]
             if j in added:  # đưa vào vì thể loại đã chọn
-                reason = f"Hợp thể loại bạn chọn: {', '.join(match)}"
+                reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
             elif knn_part is not None and knn_part[:, j].max() > 0:
                 src = liked[int(knn_part[:, j].argmax())]
                 reason = f"Vì bạn thích {display_title(self.movies.iloc[src]['title'], year=False)}"
             elif match:
-                reason = f"Hợp thể loại bạn chọn: {', '.join(match)}"
+                reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
             else:
                 reason = self.popular_reason(int(j))
             extra = {"why": factors} if factors else {}
