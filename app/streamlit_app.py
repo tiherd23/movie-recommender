@@ -34,17 +34,19 @@ STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★�
 # Thẻ phim cùng kích thước: poster tỉ lệ 2:3, tên tối đa 2 dòng, mô tả tối đa 3 dòng, để lưới phim thẳng hàng
 CSS = """<style>
 [data-testid="stMainBlockContainer"]{padding-top:2.2rem}
-.mr-poster{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:8px;display:block;background:#eceae6}
-.mr-noposter{width:100%;aspect-ratio:2/3;border-radius:8px;background:#eceae6;display:flex;align-items:center;
-  justify-content:center;color:#8a8780;font-size:2rem}
+.mr-poster{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:8px;display:block;background:#2c3440;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
+.mr-noposter{width:100%;aspect-ratio:2/3;border-radius:8px;background:#2c3440;display:flex;align-items:center;
+  justify-content:center;color:#678;font-size:2rem}
+.mr-poster:hover{transform:translateY(-2px);box-shadow:0 0 0 2px #ff8000;transition:all .15s}
 .mr-title{font-weight:600;font-size:.92rem;line-height:1.25;margin-top:.5rem;height:2.5em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.mr-genres{color:#6b6963;font-size:.74rem;margin:.2rem 0 .35rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mr-desc{color:#47453f;font-size:.79rem;line-height:1.35;height:4.05em;overflow:hidden;
+.mr-genres{color:#789;font-size:.74rem;margin:.2rem 0 .35rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-stats{color:#9ab;font-size:.74rem;margin:-.2rem 0 .35rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mr-desc{color:#9ab;font-size:.79rem;line-height:1.35;height:4.05em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
-.mr-badge{position:absolute;top:6px;left:6px;background:rgba(217,72,15,.92);color:#fff;font-size:.7rem;
+.mr-badge{position:absolute;top:6px;left:6px;background:rgba(255,128,0,.95);color:#fff;font-size:.7rem;
   padding:2px 7px;border-radius:10px}
-.mr-reason{color:#b4540c;font-size:.74rem;margin-top:.35rem;height:1.3em;white-space:nowrap;overflow:hidden;
+.mr-reason{color:#ff9d3c;font-size:.74rem;margin-top:.35rem;height:1.3em;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis}
 </style>"""
 
@@ -138,7 +140,7 @@ def why_box(factors: list[tuple[str, float]]) -> None:
     top = max(abs(v) for _, v in factors)
     for label, v in factors:
         bar = "█" * max(1, round(6 * abs(v) / top))
-        color = "green" if v > 0 else "red"
+        color = "#00e054" if v > 0 else "#ff5c5c"
         st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {label}<br>"
                     f"<span style='color:{color}'>{bar}</span> {v:+.2f}</span>", unsafe_allow_html=True)
     st.caption("Giá trị SHAP của bộ xếp hạng LightGBM: dương là đẩy phim lên, âm là kéo xuống.")
@@ -149,15 +151,28 @@ def description(m: dict) -> str:
     return BLURBS.get(m["title"]) or str(m.get("overview") or "")
 
 
+def stats_line(m: dict) -> str:
+    """'★ 4,1 · 2.077 lượt · 80% thích' (số liệu MovieLens 1M); thiếu số liệu thì chỉ ghi lượt thích."""
+    st_ = m.get("stats") or {}
+    if "n" not in st_:
+        return f"♥ {st_['likes']:,} lượt thích".replace(",", ".") if st_ else ""
+    if st_["n"] == 0:
+        return "Chưa có lượt chấm"
+    return (f"★ {st_['mean']:.1f}".replace(".", ",") + f" · {st_['n']:,} lượt".replace(",", ".")
+            + f" · {st_['like_frac']:.0%} thích")
+
+
 def card_html(m: dict) -> str:
     e = html.escape
     poster = (f'<img class="mr-poster" src="{e(m["poster_url"])}" alt="" loading="lazy">' if m.get("poster_url")
               else '<div class="mr-noposter">🎬</div>')
-    reason = f'<div class="mr-reason">💡 {e(m["reason"])}</div>' if m.get("reason") else ""
+    reason = f'<div class="mr-reason" title="{e(m["reason"])}">💡 {e(m["reason"])}</div>' if m.get("reason") else ""
     badge = '<div class="mr-badge">🔖 Muốn xem</div>' if m["item"] in st.session_state.get("watch_set", set()) else ""
     poster = f'<div style="position:relative">{poster}{badge}</div>'
     return (f'{poster}<div class="mr-title" title="{e(m["title"])}">{e(m["title"])}</div>'
             f'<div class="mr-genres">{e(m["genres"].replace("|", " · "))}</div>'
+            f'<div class="mr-stats" title="Số liệu MovieLens 1M: điểm trung bình · số lượt chấm · tỉ lệ chấm ≥ 4 sao">'
+            f'{e(stats_line(m))}</div>'
             f'<div class="mr-desc">{e(description(m))}</div>{reason}')
 
 
@@ -193,6 +208,10 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
             people.append(f"**Đạo diễn:** {extra['director']}")
         if isinstance(extra.get("cast"), str) and extra["cast"]:
             people.append(f"**Diễn viên:** {', '.join(extra['cast'].split('|')[:5])}")
+        line = stats_line(m)
+        if line:
+            st_ = m["stats"]
+            people.append(f"**MovieLens:** {line} · " + f"hạng {st_['rank']:,}".replace(",", ".") + " về lượt thích")
         if people:
             st.markdown("  \n".join(people))
         if m["title"] in BLURBS:
@@ -291,7 +310,7 @@ def page_home(ratings: dict[int, int]) -> None:
     # Phim nổi tiếng chưa chấm, mỗi lần 18 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
     with tab_rate:
         if is_guest():
-            st.info("Bạn đang xem thử với tư cách khách. Đăng nhập (nút ở thanh bên) để chấm điểm các phim dưới đây.")
+            st.info("Bạn đang xem thử với tư cách khách. Đăng nhập (nút góc trên bên phải) để chấm điểm các phim dưới đây.")
         elif cold:
             st.progress(len(ratings) / MIN_RATINGS,
                         text=f"Đã chấm {len(ratings)}/{MIN_RATINGS} phim. Chấm những phim bạn đã xem để nhận gợi ý "
@@ -476,7 +495,7 @@ def page_admin(ratings: dict[int, int]) -> None:
                 st.markdown("**Phân bố điểm**")
                 dist = all_r["rating"].value_counts().reindex(range(1, 6), fill_value=0)
                 st.bar_chart(pd.DataFrame({"Số lượt": dist.to_numpy()}, index=[f"{k} sao" for k in range(1, 6)]),
-                             color="#d9480f", height=260)
+                             color="#ff8000", height=260)
             with right:
                 st.markdown("**Phim được chấm nhiều nhất**")
                 top = all_r.groupby("item")["rating"].agg(["count", "mean"]).sort_values("count", ascending=False)[:10]

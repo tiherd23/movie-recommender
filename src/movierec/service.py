@@ -41,6 +41,33 @@ class RecommenderService:
         self._gram = self.Y.T @ self.Y + reg * np.eye(self.Y.shape[1], dtype=np.float32)
         self._title_lower = movies["title"].str.lower()
         self.genres = sorted({g for gs in movies["genres"] for g in gs.split("|")})
+        self._init_stats()
+
+    def _init_stats(self) -> None:
+        """Số liệu MovieLens của từng phim để hiển thị: số lượt chấm, điểm TB, tỉ lệ thích (>= 4 sao), hạng.
+
+        Lấy lại chính xác từ đặc trưng phim của bộ xếp hạng (không cần huấn luyện lại):
+        cột 0 = log1p(n), cột 1 = (tổng điểm + 10*mu) / (n + 10), cột 2 = tỉ lệ thích.
+        Chưa có bộ xếp hạng thì chỉ có số lượt thích (self.pop).
+        """
+        n_items = len(self.pop)
+        self.like_rank = np.empty(n_items, dtype=np.int64)  # 1 = phim được thích nhiều nhất
+        self.like_rank[np.argsort(-self.pop, kind="stable")] = np.arange(1, n_items + 1)
+        self.n_ratings = self.mean_rating = self.like_frac = None
+        if self.ranker is not None:
+            f = self.ranker["item_feats"].astype(np.float64)
+            n = np.rint(np.expm1(f[:, 0]))
+            mu = (f[:, 1] * (n + 10)).sum() / (n.sum() + 10 * n_items)
+            self.n_ratings = n.astype(np.int64)
+            self.mean_rating = np.where(n > 0, (f[:, 1] * (n + 10) - 10 * mu) / np.maximum(n, 1), np.nan)
+            self.like_frac = f[:, 2]
+
+    def stats(self, j: int) -> dict:
+        """Số liệu của phim j: likes, rank; thêm n, mean, like_frac khi có bộ xếp hạng."""
+        out = {"likes": int(self.pop[j]), "rank": int(self.like_rank[j])}
+        if self.n_ratings is not None:
+            out.update(n=int(self.n_ratings[j]), mean=float(self.mean_rating[j]), like_frac=float(self.like_frac[j]))
+        return out
 
     # ---------- huấn luyện / lưu / nạp ----------
     @classmethod
@@ -76,7 +103,7 @@ class RecommenderService:
     def save(self, path: Path | str = DEFAULT_ARTIFACT) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         state = {k: v for k, v in self.__dict__.items()
-                 if not k.startswith("_") and k not in ("genres", "item_vecs")}
+                 if not k.startswith("_") and k not in ("genres", "item_vecs", "like_rank", "n_ratings", "mean_rating", "like_frac")}
         Path(path).write_bytes(pickle.dumps(state))
 
     @classmethod
@@ -93,13 +120,19 @@ class RecommenderService:
         b = (1.0 + self.alpha) * Yl.sum(axis=0)
         return np.linalg.solve(A, b)
 
+    def popular_reason(self, j: int) -> str:
+        """Lý do 'phổ biến' bằng số liệu cụ thể thay vì câu chung chung."""
+        st = self.stats(j)
+        reason = f"Hạng {st['rank']:,} về lượt thích ({st['likes']:,} người chấm ≥ 4★)"
+        return reason.replace(",", ".")
+
     def _movie(self, j: int, **extra) -> dict:
         """Thông tin hiển thị của một phim (poster và mô tả có khi đã lấy dữ liệu TMDB)."""
         row = self.movies.iloc[j]
         poster = row.get("poster_path", "")
         return {"item": int(j), "title": row["title"], "genres": row["genres"],
                 "poster_url": f"{IMAGE_BASE}{poster}" if poster else "",
-                "overview": row.get("overview", ""), **extra}
+                "overview": row.get("overview", ""), "stats": self.stats(j), **extra}
 
     def _rank_two_stage(self, ratings: dict[int, int], liked: list[int],
                         als_score: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -195,12 +228,14 @@ class RecommenderService:
         out = []
         for j, factors in zip(top, why):
             row = self.movies.iloc[j]
-            reason = "Đang được nhiều người thích"
+            match = [g for g in genres if g in row["genres"].split("|")]
             if knn_part is not None and knn_part[:, j].max() > 0:
                 src = liked[int(knn_part[:, j].argmax())]
                 reason = f"Vì bạn thích {self.movies.iloc[src]['title']}"
-            elif set(genres) & set(row["genres"].split("|")):
-                reason = "Hợp thể loại bạn chọn"
+            elif match:
+                reason = f"Hợp thể loại bạn chọn: {', '.join(match)}"
+            else:
+                reason = self.popular_reason(int(j))
             extra = {"why": factors} if factors else {}
             out.append(self._movie(int(j), score=float(score[j]), reason=reason, method=method, **extra))
         return out

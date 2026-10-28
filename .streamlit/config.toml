@@ -3,7 +3,10 @@
 toolbarMode = "minimal"   # ẩn nút Deploy và các mục dành cho nhà phát triển ở góc trên
 
 [theme]
-primaryColor = "#d9480f"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f4f2ee"
-textColor = "#1f1d1a"
+# giao diện tối, bảng màu gần với các trang phim như Letterboxd
+base = "dark"
+primaryColor = "#ff8000"
+backgroundColor = "#14181c"
+secondaryBackgroundColor = "#2c3440"
+textColor = "#d8e0e8"
+borderColor = "#2c3440"

@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from movierec.data import build_dataset
@@ -80,6 +81,9 @@ def test_service_personalizes_for_new_user(service):
     assert len(svc.recommend({}, k=5)) == 5  # người chưa chấm gì vẫn có gợi ý
     cold = svc.recommend({}, ["Drama"], k=5)  # cold-start theo thể loại
     assert all("Drama" in r["genres"] for r in cold)
+    assert all(r["reason"] == "Hợp thể loại bạn chọn: Drama" for r in cold)
+    top = svc.recommend({}, k=1)[0]
+    assert top["reason"].startswith("Hạng 1 về lượt thích")  # lý do phổ biến có số liệu
     assert svc.search("movie 12")[0]["title"].lower().startswith("movie 12")
     assert all(s["item"] != 0 for s in svc.similar(0))
 
@@ -185,3 +189,18 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.run()
     assert not at.exception and at.title[0].value == "Quản trị hệ thống"
     assert [m.value for m in at.metric if m.label == "Người dùng"] == ["2"]  # hai tài khoản: tester và admin
+
+
+def test_item_stats_match_ratings(service, fake_ml1m):
+    """Số lượt chấm, điểm TB, tỉ lệ thích hiển thị trên thẻ phim khớp đúng dữ liệu gốc."""
+    svc, _ = service
+    ds = build_dataset(fake_ml1m)
+    full = pd.concat([ds.train, ds.val, ds.test])
+    g = full.groupby("item")["rating"].agg(["count", "mean"])
+    like = full.assign(l=full["rating"] >= 4).groupby("item")["l"].mean()
+    for j in g.index[:20]:
+        st = svc.stats(int(j))
+        assert st["n"] == g.loc[j, "count"]
+        assert abs(st["mean"] - g.loc[j, "mean"]) < 1e-3
+        assert abs(st["like_frac"] - like.loc[j]) < 1e-4
+    assert svc.stats(int(np.argmax(svc.pop)))["rank"] == 1
