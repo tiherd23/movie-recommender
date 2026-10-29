@@ -123,7 +123,7 @@ def test_description_always_searches_by_meaning():
     assert out["source"] == "semantic" and [m["item"] for m in out["movies"]] == [2, 5]
     out = Assistant(svc, FakeSemantic(), make_llm(base(action="recommend", genres=["Comedy"])), k=2).reply("x", {})
     assert out["source"] == "recommend" and [m["item"] for m in out["movies"]] == [1, 4]  # không mô tả: gợi ý cá nhân hóa + lọc thể loại
-    assert out["text"].startswith("Đây là 2 phim gợi ý theo sở thích của bạn thuộc thể loại Hài")
+    assert out["text"].startswith("Đây là 2 phim được yêu thích nhất trên MovieLens thuộc thể loại Hài")  # chưa chấm gì
 
 
 def test_ollama_client_retries_once_on_connection_error():
@@ -178,3 +178,28 @@ def test_prewritten_blurbs_skip_llm(tmp_path):
     with_llm = Assistant(svc, FakeSemantic(), lambda m, schema=None, **kw: calls.append(1) or '{"reason": "X"}',
                          blurbs=blurbs)
     assert with_llm.explain(svc._movie(2)) == "" and calls == []  # có bộ câu viết sẵn: phim thiếu câu không gọi LLM
+
+
+def test_rule_intent_without_llm():
+    from movierec.assistant import rule_intent
+
+    genres = ["Comedy", "Horror", "Romance", "Sci-Fi", "Children's"]
+    assert rule_intent("xin chào", genres)["action"] == "chat"
+    sim = rule_intent("phim giống The Matrix nhé", genres)
+    assert sim["action"] == "similar" and sim["similar_to"] == "The Matrix"
+    more = rule_intent("còn phim nào khác không", genres)
+    assert more["more"] and more["description"] == ""
+    mix = rule_intent("phim hài thập niên 90, đừng có lãng mạn", genres)
+    assert mix["genres"] == ["Comedy"] and mix["exclude_genres"] == ["Romance"]
+    assert (mix["year_from"], mix["year_to"]) == (1990, 1999)
+    assert rule_intent("phim kinh dị sau 1995", genres)["year_from"] == 1995
+    assert rule_intent("phim hoạt hình cho trẻ em", genres)["genres"] == ["Children's"]
+
+
+def test_more_and_similar_work_without_llm():
+    svc = FakeService()
+    bot, state = Assistant(svc, None, None, k=2), {}
+    first = bot.reply("phim hài", {}, state)
+    again = bot.reply("còn phim nào khác không", {}, state)
+    assert first["movies"] and not {m["item"] for m in first["movies"]} & {m["item"] for m in again["movies"]}
+    assert bot.reply("chào bạn", {}, {})["source"] == "chat"

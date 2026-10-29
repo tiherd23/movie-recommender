@@ -54,10 +54,15 @@ def display_title(title: str, year: bool = True) -> str:
 
 
 def _norm_text(text: str) -> list[str]:
-    """Chữ thường, bỏ dấu và dấu câu, tách từ (để "the matrix", "Matrix 1999" đều khớp "Matrix, The (1999)")."""
+    """Chữ thường, bỏ dấu và dấu câu, tách từ, số 2-10 đổi thành số La Mã (để "the matrix", "Matrix 1999" đều khớp
+    "Matrix, The (1999)", "godfather 2" khớp "Godfather: Part II")."""
     text = unicodedata.normalize("NFKD", text.lower())
     text = "".join(c for c in text if not unicodedata.combining(c))
-    return re.findall(r"[a-z0-9]+", text)
+    return [_ROMAN.get(t, t) for t in re.findall(r"[a-z0-9]+", text)]
+
+
+# số thứ tự phần phim: "godfather 2" khớp "Godfather: Part II", "star wars 4" khớp "Episode IV"
+_ROMAN = {str(n): r for n, r in enumerate(["", "", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"]) if r}
 
 
 def _z(v: np.ndarray) -> np.ndarray:

@@ -12,3 +12,5 @@ data/app.db
 .env
 reports/
 logs/
+data/.session_key
+data/*.db

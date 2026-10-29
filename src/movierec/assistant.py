@@ -24,7 +24,7 @@ from typing import Callable
 
 import numpy as np
 
-from .service import genre_vi
+from .service import display_title, genre_vi
 
 DEFAULT_LLM = os.environ.get("MOVIEREC_LLM", "qwen3:4b")
 DEFAULT_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -225,6 +225,65 @@ def clean_intent(raw: dict, genres: list[str]) -> dict:
             "more": bool(raw.get("more"))}
 
 
+# Hiểu câu bằng luật khi không có LLM: từ khóa tiếng Việt -> thể loại MovieLens
+GENRE_WORDS = {
+    "Comedy": ["hài", "vui nhộn", "comedy"], "Horror": ["kinh dị", "ma ám", "horror"],
+    "Action": ["hành động", "action"], "Adventure": ["phiêu lưu", "adventure"],
+    "Animation": ["hoạt hình", "animation"], "Children's": ["thiếu nhi", "trẻ em", "gia đình"],
+    "Crime": ["hình sự", "tội phạm", "crime"], "Documentary": ["tài liệu", "documentary"],
+    "Drama": ["chính kịch", "tâm lý", "drama"], "Fantasy": ["giả tưởng", "thần thoại", "phép thuật", "fantasy"],
+    "Film-Noir": ["noir"], "Musical": ["nhạc kịch", "ca nhạc", "musical"],
+    "Mystery": ["bí ẩn", "trinh thám", "mystery"], "Romance": ["lãng mạn", "tình cảm", "tình yêu", "romance"],
+    "Sci-Fi": ["khoa học viễn tưởng", "viễn tưởng", "vũ trụ", "sci-fi"], "Thriller": ["giật gân", "ly kỳ", "thriller"],
+    "War": ["chiến tranh", "war"], "Western": ["miền tây", "cao bồi", "western"],
+}
+_GREETING = re.compile(r"^(xin chào|chào|hello|hi|alo|cảm ơn|cám ơn|thanks?|ok|oke)\b", re.I)
+_MORE = re.compile(r"(còn phim|phim khác|phim nào khác|thêm phim|gợi ý thêm|thêm vài|khác không|nữa không)", re.I)
+_SIMILAR = re.compile(r"(?:giống|tương tự|như)\s+(?:phim\s+)?(.+)", re.I)
+_NEGATE = re.compile(r"(đừng|không có|không muốn|không phải|trừ|ngoại trừ|bỏ qua)", re.I)
+
+
+def rule_intent(message: str, genres: list[str]) -> dict:
+    """Ý định của câu chat bằng luật đơn giản, dùng khi không có (hoặc lỗi) LLM: lời chào, "còn phim nào khác",
+    "phim giống X", thể loại muốn và không muốn (sau "đừng", "không có"...), thập niên/năm."""
+    text = " ".join(message.lower().split())
+    if _GREETING.match(text) and len(text.split()) <= 5 and not any(
+            w in text for ws in GENRE_WORDS.values() for w in ws):
+        return clean_intent({"action": "chat"}, genres)
+    raw: dict = {"action": "describe", "description": message, "more": bool(_MORE.search(text))}
+    if raw["more"] and len(text.split()) <= 8:
+        raw["description"] = ""
+    sim = _SIMILAR.search(" ".join(message.split()))  # giữ nguyên chữ hoa của tên phim
+    if sim:
+        name = re.sub(r"[?.!]+$|\s+(không|nhé|nha|đi|ạ|với)$", "", sim.group(1).strip(), flags=re.I).strip()
+        if name:
+            raw.update(action="similar", similar_to=name, description="")
+    neg = _NEGATE.search(text)
+    want, avoid = [], []
+    for genre, words in GENRE_WORDS.items():
+        for w in words:
+            pos = text.find(w)
+            if pos >= 0:
+                (avoid if neg and pos > neg.start() else want).append(genre)
+                break
+    raw.update(genres=want, exclude_genres=avoid)
+    decade = re.search(r"(?:thập niên|những năm|thập kỷ)\s*(?:19)?(\d0)\b", text)
+    if decade:
+        start = 1900 + int(decade.group(1))
+        raw.update(year_from=start, year_to=start + 9)
+    else:
+        year = re.search(r"\b(19\d\d|20\d\d)\b", text)
+        if year:
+            y = int(year.group(1))
+            if re.search(r"(sau|từ)\s+(năm\s+)?" + str(y), text):
+                raw["year_from"] = y
+            elif re.search(r"trước\s+(năm\s+)?" + str(y), text):
+                raw["year_to"] = y
+            elif not raw.get("similar_to"):
+                raw.update(year_from=y, year_to=y)
+    return clean_intent(raw, genres)
+
+
 class Assistant:
     def __init__(self, service, semantic=None, llm: LLM | None = None, k: int = 5,
                  blurbs: dict[str, str] | None = None, live_blurbs: bool | None = None):
@@ -241,8 +300,8 @@ class Assistant:
 
     # ---------- bước 1: hiểu câu chat ----------
     def parse(self, message: str, history: list[dict] | None = None) -> dict:
-        """Ý định của câu chat. Không có LLM (hoặc LLM lỗi): coi cả câu là một mô tả nội dung."""
-        fallback = clean_intent({"action": "describe", "description": message}, self.svc.genres)
+        """Ý định của câu chat. Không có LLM (hoặc LLM lỗi): hiểu câu bằng luật (rule_intent)."""
+        fallback = rule_intent(message, self.svc.genres)
         if self.llm is None:
             return fallback
         messages = [{"role": "system", "content": INTENT_PROMPT.format(genres=", ".join(self.svc.genres))}]
@@ -279,7 +338,7 @@ class Assistant:
             if hits:
                 base = hits[0]
                 skip.add(base["item"])
-                cands = [dict(m, reason=f"Tương tự {base['title']}") for m in self.svc.similar(base["item"], k=pool)]
+                cands = [dict(m, reason=f"Tương tự {display_title(base['title'], year=False)}") for m in self.svc.similar(base["item"], k=pool)]
                 source = "similar"
         # LLM nhỏ đôi khi gán "recommend" cho câu có mô tả nội dung; cứ có mô tả là tìm theo nghĩa (thể loại, năm vẫn được lọc)
         by_meaning = action in ("describe", "similar") or bool(intent["description"])
@@ -330,24 +389,36 @@ class Assistant:
             self.rejected.append((movie["title"], (text or str(out))[:300]))
         return ""
 
-    def intro(self, n: int, source: str, intent: dict | None = None) -> str:
-        """Câu mở đầu nói ĐÚNG cách phim được chọn, để không khẳng định "hợp yêu cầu" khi chỉ là gợi ý chung."""
+    def intro(self, n: int, source: str, intent: dict | None = None, personal: bool = True) -> str:
+        """Câu mở đầu nói ĐÚNG cách phim được chọn, để không khẳng định "hợp yêu cầu" khi chỉ là gợi ý chung.
+        personal=False (chưa chấm phim nào, vd. khách): không nói "theo sở thích của bạn"."""
         intent = intent or {}
-        genres = intent.get("genres") or []
-        cond = f" thuộc thể loại {genre_vi(genres)}" if genres else ""
+        conds = []
+        if intent.get("genres"):
+            conds.append(f"thuộc thể loại {genre_vi(intent['genres'])}")
+        if intent.get("exclude_genres"):
+            conds.append(f"không có {genre_vi(intent['exclude_genres'])}")
+        y0, y1 = intent.get("year_from"), intent.get("year_to")
+        if y0 and y1:
+            conds.append(f"ra mắt năm {y0}" if y0 == y1 else f"ra mắt {y0}–{y1}")
+        elif y0 or y1:
+            conds.append(f"ra mắt từ {y0}" if y0 else f"ra mắt trước {y1}")
+        cond = (" " + ", ".join(conds)) if conds else ""
         if source == "semantic":
             return f"Mình tìm được {n} phim có nội dung gần với mô tả của bạn{cond}:"
         if source == "similar":
-            return f"Đây là {n} phim giống phim bạn nhắc tới nhất{cond}:"
-        wanted_meaning = intent.get("action") in ("describe", "similar") or bool(intent.get("description"))
-        if wanted_meaning:
-            why = ("Mình chưa tìm thấy phim bạn nhắc tới" if intent.get("action") == "similar" and self.semantic is not None
-                   else "Tính năng so nội dung mô tả đang tắt" if self.semantic is None
-                   else "Mình chưa so được nội dung mô tả")
-            return f"{why}, nên đây là {n} phim gợi ý theo sở thích của bạn{cond} (chưa chắc khớp mô tả):"
-        return f"Đây là {n} phim gợi ý theo sở thích của bạn{cond}:"
+            return f"Đây là {n} phim giống “{intent.get('similar_to')}” nhất{cond}:" if intent.get("similar_to") \
+                else f"Đây là {n} phim giống phim bạn nhắc tới nhất{cond}:"
+        basis = "gợi ý theo sở thích của bạn" if personal else "được yêu thích nhất trên MovieLens"
+        if intent.get("action") == "similar" and intent.get("similar_to"):
+            return f"Mình chưa tìm thấy phim “{intent['similar_to']}” trong kho, nên đây là {n} phim {basis}{cond}:"
+        if intent.get("action") == "describe" or intent.get("description"):
+            why = "Tính năng so nội dung mô tả đang tắt" if self.semantic is None else "Mình chưa so được nội dung mô tả"
+            return f"{why}, nên đây là {n} phim {basis}{cond} (chưa chắc khớp mô tả):"
+        return f"Đây là {n} phim {basis}{cond}:"
 
-    def write(self, message: str, movies: list[dict], source: str = "semantic", intent: dict | None = None) -> str:
+    def write(self, message: str, movies: list[dict], source: str = "semantic", intent: dict | None = None,
+              personal: bool = True) -> str:
         """Lời đáp: câu mở đầu (theo cách chọn phim) + mỗi phim một dòng. Tên phim lấy từ dữ liệu,
         LLM chỉ viết câu giới thiệu."""
         if not movies:
@@ -355,8 +426,8 @@ class Assistant:
         lines = []
         for m in movies:
             reason = self.explain(m)
-            lines.append(f"- **{m['title']}**" + (f": {reason}" if reason else ""))
-        return "\n".join([self.intro(len(movies), source, intent), ""] + lines)
+            lines.append(f"- **{display_title(m['title'])}**" + (f": {reason}" if reason else ""))
+        return "\n".join([self.intro(len(movies), source, intent, personal), ""] + lines)
 
     # ---------- một lượt hội thoại ----------
     def reply(self, message: str, ratings: dict[int, int], state: dict | None = None,
@@ -379,7 +450,7 @@ class Assistant:
             movies, source = self.retrieve(intent, message, ratings, shown)
             if on_movies and movies:
                 on_movies(movies)
-            text = self.write(message, movies, source, intent)
+            text = self.write(message, movies, source, intent, personal=bool(ratings))
             state["intent"] = intent
             shown.update(m["item"] for m in movies)
         history += [{"role": "user", "text": message}, {"role": "assistant", "text": text}]

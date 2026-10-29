@@ -111,7 +111,9 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     assert not at.exception
     db = Database(tmp_path / "web.db")
     assert db.ratings(1) == {int(first): 5}  # đã lưu 5 sao vào SQLite
-    assert f"onb_{first}" not in [f.key for f in at.feedback]  # phim vừa chấm rời khỏi danh sách cần chấm
+    still = [f for f in at.feedback if f.key == f"onb_{first}"]  # phim vừa chấm vẫn nằm tại chỗ, hiện số sao
+    assert len(still) == 1 and still[0].value == 4
+    assert any(f"Đã lưu 5★" in t.value for t in at.toast)  # có xác nhận đã lưu
     assert f"rec_{first}" not in [f.key for f in at.feedback if f.key.startswith("rec_")]
 
     at.session_state["start_page"] = "phim-cua-toi"
@@ -163,9 +165,9 @@ def test_guest_can_browse_but_not_rate(service, tmp_path, monkeypatch):
     assert not at.exception and at.title[0].value == "Gợi ý cho bạn"
     assert len(at.feedback) == 0  # khách không chấm được: không có hàng sao
     assert any("Đăng nhập để chấm điểm" in c.value for c in at.caption)
-    at.session_state["start_page"] = "phim-cua-toi"  # khách không có trang này: quay về trang gợi ý
+    at.session_state["start_page"] = "phim-cua-toi"  # khách mở trang cần đăng nhập: có lời giải thích
     at.run()
-    assert at.title[0].value == "Gợi ý cho bạn"
+    assert at.title[0].value == "Phim của tôi" and "cần đăng nhập" in at.info[0].value and len(at.feedback) == 0
     at.session_state["start_page"] = "tim-phim"
     at.run()
     assert at.title[0].value == "Tìm phim"
@@ -179,9 +181,9 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.text_input(key="reg_user").set_value("tester")
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()
-    at.session_state["start_page"] = "quan-tri"  # người dùng thường không có trang quản trị
+    at.session_state["start_page"] = "quan-tri"  # người dùng thường: chỉ thấy lời giải thích, không có số liệu
     at.run()
-    assert at.title[0].value == "Gợi ý cho bạn"
+    assert "chỉ dành cho tài khoản quản trị" in at.warning[0].value and not [m for m in at.metric if m.label == "Tài khoản"]
     at.button(key="logout_btn").click().run()
     at.text_input(key="reg_user").set_value("admin")  # tên quản trị không tự đăng ký được trên web
     at.text_input(key="reg_pw").set_value("12345")
@@ -245,6 +247,7 @@ def test_search_ignores_case_articles_and_year():
     assert display_title("Usual Suspects, The (1995)", year=False) == "The Usual Suspects"
     assert display_title("Toy Story (1995)") == "Toy Story (1995)"
     assert _norm_text("Amélie, the MATRIX!") == ["amelie", "the", "matrix"]
+    assert _norm_text("Godfather 2") == _norm_text("Godfather II") == ["godfather", "ii"]
 
 
 def test_search_matches_words(service):

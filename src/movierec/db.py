@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import sqlite3
 import time
@@ -46,8 +47,10 @@ class Database:
     def register(self, username: str, password: str, reserved: set[str] | frozenset[str] = frozenset()) -> int:
         """reserved: tên dành riêng (tài khoản quản trị), không cho tự đăng ký trên web; tạo bằng scripts/create_admin.py."""
         username = username.strip()
-        if len(username) < 3 or len(password) < 4:
-            raise ValueError("Tên đăng nhập cần ít nhất 3 ký tự, mật khẩu ít nhất 4 ký tự.")
+        if len(username) < 3 or len(password.strip()) < 4:
+            raise ValueError("Tên đăng nhập cần ít nhất 3 ký tự, mật khẩu ít nhất 4 ký tự (không tính khoảng trắng).")
+        if len(username) > 30 or not re.fullmatch(r"[\w.]+", username):
+            raise ValueError("Tên đăng nhập chỉ gồm chữ, số, dấu chấm hoặc gạch dưới, tối đa 30 ký tự (không có khoảng trắng).")
         if username.lower() in {r.lower() for r in reserved}:
             raise ValueError("Tên đăng nhập này được dành riêng, hãy chọn tên khác.")
         salt = secrets.token_bytes(16)
@@ -68,6 +71,11 @@ class Database:
         if row and secrets.compare_digest(_hash(password, row[1]), row[2]):
             return int(row[0])
         return None
+
+    def user(self, user_id: int) -> tuple[str, bytes] | None:
+        """(tên đăng nhập, mã băm mật khẩu) của một tài khoản, None nếu không còn."""
+        row = self.conn.execute("SELECT username, pw_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+        return (row[0], bytes(row[1])) if row else None
 
     def set_genres(self, user_id: int, genres: list[str]) -> None:
         with self.conn:

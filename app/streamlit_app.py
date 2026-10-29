@@ -17,6 +17,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from movierec import session as sess  # noqa: E402
 from movierec.db import Database  # noqa: E402
 from movierec.service import DEFAULT_ARTIFACT, GENRE_SHARE, GENRE_VI, display_title, genre_vi, load_or_build  # noqa: E402
 
@@ -36,6 +37,8 @@ DIVERSITY_HELP = ("Xếp lại 50 phim điểm cao nhất để danh sách trả
                   "(10 phim mỗi người, so với “Không”): **Nhẹ** thêm 0,8 thể loại, độ chính xác NDCG@10 giảm 0,6%; "
                   "**Vừa** thêm 1,8 thể loại, giảm 2,7%; **Mạnh** thêm 2,7 thể loại, giảm 8,4%.")
 TZ = "Asia/Ho_Chi_Minh"
+SESSION_KEY_PATH = os.environ.get("MOVIEREC_SESSION_KEY", str(Path(DB_PATH).parent / ".session_key"))
+PAGE_URLS = {"goi-y", "tim-phim", "tim-theo-mo-ta", "tro-ly", "phim-cua-toi", "quan-tri"}
 STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★★★★"]
 
 # Thẻ phim cùng kích thước: poster tỉ lệ 2:3, tên tối đa 2 dòng, mô tả tối đa 3 dòng, để lưới phim thẳng hàng
@@ -123,6 +126,7 @@ def get_extras(tmdb_path: str, trailers_path: str, m1: float, m2: float):
 
 
 svc, db = get_service(ARTIFACT), get_db(DB_PATH)
+SESSION_KEY = sess.load_key(SESSION_KEY_PATH)
 BLURBS = get_blurbs(BLURBS_PATH, _mtime(BLURBS_PATH))
 EXTRAS = get_extras(TMDB_PATH, TRAILERS_PATH, _mtime(TMDB_PATH), _mtime(TRAILERS_PATH))
 
@@ -148,15 +152,44 @@ def to_local(seconds: pd.Series | float):
     return pd.Timestamp(seconds, unit="s", tz="UTC").tz_convert(TZ)
 
 
-def login_again() -> None:
-    st.session_state.clear()
+def sign_in(user_id: int | None, username: str) -> None:
+    """Vào phiên (user_id=None: khách) và hẹn đặt cookie để tải lại trang không phải đăng nhập lại."""
+    info = db.user(user_id) if user_id is not None else None
+    st.session_state.update(user_id=user_id, username=username, guest=user_id is None,
+                            set_cookie=sess.make_token(SESSION_KEY, user_id, info[1] if info else b""))
+    if user_id is not None and (pending := st.session_state.pop("pending_genres", None)) and not db.get_genres(user_id):
+        db.set_genres(user_id, pending)  # thể loại đã chọn lúc là khách được giữ khi đăng ký/đăng nhập
     st.rerun()
+
+
+def login_again() -> None:
+    """Đăng xuất (hoặc khách bấm Đăng nhập): xóa phiên và cookie, giữ thể loại khách đã chọn."""
+    keep = {k: st.session_state[k] for k in ("genre_select",) if is_guest() and k in st.session_state}
+    st.session_state.clear()
+    st.session_state.update(logged_out=True, clear_cookie=True)
+    if keep.get("genre_select"):
+        st.session_state.pending_genres = keep["genre_select"]
+    st.rerun()
+
+
+def restore_session() -> None:
+    """Tải lại trang (F5), mở tab mới: đọc cookie phiên, hợp lệ thì vào lại đúng tài khoản."""
+    if st.session_state.get("logged_out"):
+        return
+    ok, uid = sess.read_token(SESSION_KEY, st.context.cookies.get(sess.COOKIE),
+                              lambda i: (db.user(i) or (None, None))[1])
+    if ok:
+        st.session_state.update(user_id=uid, guest=uid is None,
+                                username="Khách" if uid is None else db.user(uid)[0])
 
 
 def _save_rating(item: int, key: str) -> None:
     """st.feedback trả 0..4 (None khi bấm lại ngôi sao đang chọn để bỏ chấm); lưu thành 1..5 sao."""
     value = st.session_state[key]
     db.rate(st.session_state.user_id, item, None if value is None else value + 1)
+    name = display_title(svc.movies.iloc[item]["title"])
+    st.toast(f"Đã bỏ chấm “{name}”" if value is None else f"Đã lưu {value + 1}★ cho “{name}”",
+             icon=":material/star:")
 
 
 def rating_stars(item: int, prefix: str, ratings: dict[int, int]) -> None:
@@ -181,7 +214,7 @@ def why_box(factors: list[tuple[str, float]]) -> None:
         st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {html.escape(label)}<br>"
                     f"<span style='color:{color}'>{bar}</span> {share:.0%}</span>", unsafe_allow_html=True)
     st.caption("Phần trăm cho biết mỗi yếu tố chiếm bao nhiêu trong lý do xếp hạng phim này; ▲ đẩy phim lên, "
-               "▼ kéo xuống. Tính bằng SHAP trên bộ xếp hạng.")
+               "▼ kéo xuống.")
 
 
 def description(m: dict) -> str:
@@ -265,7 +298,7 @@ def movie_dialog(item: int, ratings: dict[int, int]) -> None:
             rating_stars(item, "dlg", ratings)
             watch_set = st.session_state.setdefault("watch_set", set())
             if st.button("Bỏ khỏi danh sách muốn xem" if item in watch_set else "Thêm vào danh sách muốn xem",
-                         key=f"watch_{item}", icon=":material/bookmark:"):
+                         key=f"dlg_watch_{item}", icon=":material/bookmark:"):
                 added = db.toggle_watch(st.session_state.user_id, item)
                 (watch_set.add if added else watch_set.discard)(item)
                 name = display_title(m["title"])
@@ -311,8 +344,11 @@ def page_auth() -> None:
     with mid:
         st.title("🎬 MovieRec")
         st.write("Hệ thống gợi ý phim cá nhân hóa dựa trên học máy, trên 3.706 phim của bộ dữ liệu MovieLens 1M.")
-        st.caption("⭐ Gợi ý theo sở thích, có giải thích lý do · 💬 Tìm phim bằng câu tiếng Việt · "
-                   "🤖 Trợ lý hội thoại chạy ngay trên máy")
+        features = ["⭐ Gợi ý theo sở thích, có giải thích lý do", "🔎 Tìm phim theo tên"]
+        if Path(SEMANTIC).exists():
+            features.append("💬 Tìm phim bằng câu tiếng Việt")
+        features.append("🤖 Trợ lý hội thoại")
+        st.caption(" · ".join(features))
         tab_login, tab_register = st.tabs(["Đăng nhập", "Đăng ký"])
         # st.form: gửi cả tên và mật khẩu cùng lúc khi bấm nút, kể cả khi ô nhập chưa mất tiêu điểm
         with tab_login, st.form("login_form"):
@@ -323,8 +359,7 @@ def page_auth() -> None:
                 if uid is None:
                     st.error("Sai tên đăng nhập hoặc mật khẩu.")
                 else:
-                    st.session_state.update(user_id=uid, username=user.strip())
-                    st.rerun()
+                    sign_in(uid, user.strip())
         with tab_register, st.form("register_form"):
             user = st.text_input("Tên đăng nhập", key="reg_user")
             pw = st.text_input("Mật khẩu", type="password", key="reg_pw")
@@ -334,12 +369,10 @@ def page_auth() -> None:
                 except ValueError as err:
                     st.error(str(err))
                 else:
-                    st.session_state.update(user_id=uid, username=user.strip())
-                    st.rerun()
+                    sign_in(uid, user.strip())
         st.divider()
         if st.button("Xem thử không cần đăng nhập", key="guest_btn", width="stretch", icon=":material/visibility:"):
-            st.session_state.update(guest=True, user_id=None, username="Khách")
-            st.rerun()
+            sign_in(None, "Khách")
         st.caption("Khách xem được gợi ý theo thể loại và độ phổ biến, tìm phim, tìm theo mô tả và trợ lý; "
                    "đăng nhập để chấm điểm và nhận gợi ý cá nhân hóa.")
 
@@ -349,68 +382,88 @@ def _save_genres() -> None:
         db.set_genres(st.session_state.user_id, st.session_state.genre_select)
 
 
+def _rate_batch(ratings: dict[int, int], new: bool = False) -> list[int]:
+    """18 phim nổi tiếng đang cho chấm. Giữ nguyên tới khi bấm "Xem phim khác", nên phim vừa chấm vẫn nằm tại chỗ
+    (hiện số sao đã chấm) thay vì biến mất và để phim khác trượt vào đúng chỗ con trỏ."""
+    batch = st.session_state.get("rate_batch")
+    if new or batch is None:
+        page = st.session_state.get("rate_page", 0) + (1 if new else 0)
+        pool = [m["item"] for m in svc.popular(300) if m["item"] not in ratings]
+        page = page % max(1, len(pool) // 18)
+        batch = pool[page * 18:(page + 1) * 18] or pool[:18]
+        st.session_state.update(rate_page=page, rate_batch=batch)
+    return batch
+
+
 def page_home(ratings: dict[int, int]) -> None:
     liked = sum(r >= 4 for r in ratings.values())
     cold = liked < MIN_RATINGS  # đủ 5 phim THÍCH (4-5 sao) mới dùng kiến trúc hai tầng, không phải 5 phim đã chấm
-    tab_rec, tab_rate = st.tabs(["⭐ Phim dành cho bạn", "🎞️ Chấm thêm phim"], key="home_tab",
-                                default="🎞️ Chấm thêm phim" if cold and not is_guest() else "⭐ Phim dành cho bạn")
-
-    # Phim nổi tiếng chưa chấm, mỗi lần 18 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
-    with tab_rate:
-        if is_guest():
-            st.info("Bạn đang xem thử với tư cách khách. Đăng nhập (nút góc trên bên phải) để chấm điểm các phim dưới đây.")
-        elif cold:
-            st.progress(liked / MIN_RATINGS,
-                        text=f"Đã thích {liked}/{MIN_RATINGS} phim (chấm 4-5★), đã chấm tổng cộng {len(ratings)} phim. "
-                             f"Thích thêm {MIN_RATINGS - liked} phim nữa để nhận gợi ý cá nhân hóa đầy đủ.")
-        else:
-            st.caption("Phim nổi tiếng bạn chưa chấm. Chấm càng nhiều, gợi ý càng sát sở thích.")
-        page = st.session_state.setdefault("rate_page", 0)
-        pool = [m for m in svc.popular(300) if m["item"] not in ratings]
-        to_rate = pool[page * 18:(page + 1) * 18] or pool[:18]
-        movie_grid(to_rate, "onb", ratings)
-        if st.button("Xem phim khác", key="more_to_rate", icon=":material/refresh:"):
-            st.session_state.rate_page = (page + 1) % max(1, len(pool) // 18)
-            st.rerun()
+    guest = is_guest()
+    shown: set[int] = set()
+    if guest:  # khách không chấm được nên không có tab chấm phim
+        tab_rec = st.container()
+    else:
+        tab_rec, tab_rate = st.tabs(["⭐ Phim dành cho bạn", "🎞️ Chấm thêm phim"], key="home_tab",
+                                    default="🎞️ Chấm thêm phim" if cold else "⭐ Phim dành cho bạn")
+        # Phim nổi tiếng, mỗi lần 18 phim. Người mới dùng tab này để cho hệ thống biết sở thích.
+        with tab_rate:
+            left, right = st.columns([4, 1], vertical_alignment="center")
+            with left:
+                if cold:
+                    st.progress(liked / MIN_RATINGS,
+                                text=f"Đã thích {liked}/{MIN_RATINGS} phim (chấm 4-5★), đã chấm tổng cộng "
+                                     f"{len(ratings)} phim. Thích thêm {MIN_RATINGS - liked} phim nữa để nhận gợi ý "
+                                     "cá nhân hóa đầy đủ.")
+                else:
+                    st.caption("Phim nổi tiếng. Chấm những phim bạn đã xem, chấm càng nhiều gợi ý càng sát sở thích.")
+            if right.button("Xem phim khác", key="more_to_rate", icon=":material/refresh:", width="stretch"):
+                _rate_batch(ratings, new=True)
+            batch = _rate_batch(ratings)
+            movie_grid([svc._movie(i) for i in batch], "onb", ratings)
+            if cold:  # người mới: gợi ý chủ yếu là phim phổ biến, bỏ các phim đang ở tab chấm phim cho khỏi lặp
+                shown = set(batch)
 
     with tab_rec:
-        genres = (st.session_state.get("genre_select", []) if is_guest()
+        genres = (st.session_state.get("genre_select", []) if guest
                   else db.get_genres(st.session_state.user_id))
         left, right = st.columns([3, 2], vertical_alignment="bottom")
         left.multiselect("Thể loại yêu thích", svc.genres, default=genres, key="genre_select",
-                         on_change=_save_genres, placeholder="Chọn vài thể loại bạn thích",
+                         on_change=_save_genres, placeholder="Chọn vài thể loại bạn thích", select_all=False,
                          format_func=lambda g: GENRE_VI.get(g, g))
         # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) chỉ giảm NDCG@10 của kiến trúc
         # hai tầng 0,6% nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
         level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY), default="Nhẹ", key="diversity",
                                         required=True,
                                         help=DIVERSITY_HELP)
-        # Người mới: gợi ý chủ yếu là phim phổ biến, nên bỏ các phim đang hiện ở tab chấm phim cho khỏi lặp
-        shown = {m["item"] for m in to_rate} if cold else set()
         recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
                 if m["item"] not in shown][:18]
-        if is_guest():
-            st.caption("Gợi ý cho khách dựa trên thể loại bạn chọn và độ phổ biến. "
-                       "Đăng nhập để chấm phim và nhận gợi ý riêng cho bạn.")
+        chosen = f"thể loại bạn chọn ({genre_vi(genres)})" if genres else ""
+        if guest:
+            st.caption((f"Phim được thích nhiều nhất trên MovieLens thuộc {chosen}. " if genres else
+                        "Phim được thích nhiều nhất trên MovieLens. Chọn thể loại ở trên để lọc. ")
+                       + "Đăng nhập để chấm phim và nhận gợi ý riêng cho bạn.")
         elif recs and recs[0].get("method") == "two_stage":
-            note = (f" Ít nhất {math.ceil(18 * GENRE_SHARE)}/18 phim thuộc thể loại bạn chọn." if genres else "")
+            note = (f" Ít nhất {math.ceil(18 * GENRE_SHARE)}/18 phim thuộc {chosen}." if genres else "")
             st.caption(f"Gợi ý cá nhân hóa đầy đủ, dựa trên {liked} phim bạn thích.{note} "
                        "Bấm “Vì sao?” để xem yếu tố nào đưa phim lên.")
         else:
-            st.caption(f"Gợi ý cơ bản theo thể loại bạn chọn và độ phổ biến. Thích thêm {MIN_RATINGS - liked} phim "
-                       "(chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
+            basis = [f"{liked} phim bạn thích"] if liked else []
+            basis += [chosen] if genres else []
+            st.caption(f"Gợi ý cơ bản dựa trên {', '.join(basis + ['độ phổ biến'])}. "
+                       f"Thích thêm {MIN_RATINGS - liked} phim (chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
         n_genres = len({g for m in recs for g in m["genres"].split("|")})
         st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
         movie_grid(recs, "rec", ratings)
 
 
 def page_search(ratings: dict[int, int]) -> None:
-    query = st.text_input("Tên phim (tiếng Anh)", key="search_q", placeholder="ví dụ: matrix")
+    query = st.text_input("Tên phim (tiếng Anh)", key="search_q", placeholder="ví dụ: matrix", max_chars=100)
     results = svc.search(query)
-    if query and not results:
-        st.warning(f"Không có phim nào tên khớp “{query.strip()}”. Hãy thử tên tiếng Anh gốc (vd. “matrix”, "
+    if query.strip() and not results:
+        shown_q = query.strip() if len(query.strip()) <= 40 else query.strip()[:40] + "…"
+        st.warning(f"Không có phim nào tên khớp “{shown_q}”. Hãy thử tên tiếng Anh gốc (vd. “matrix”, "
                    "“star wars”), bớt vài từ, hoặc dùng trang Tìm theo mô tả nếu chỉ nhớ nội dung phim.")
-    elif query:
+    elif query.strip():
         total = svc.search_all(query)[1]
         st.caption(f"{total:,} phim khớp".replace(",", ".") + (f", hiện {len(results)} phim phổ biến nhất." if total > len(results)
                                                                else "."))
@@ -427,6 +480,9 @@ def page_search(ratings: dict[int, int]) -> None:
                 if m.get("overview"):
                     st.caption(m["overview"])
                 rating_stars(m["item"], "search", ratings)
+                if st.button("Chi tiết · trailer · Muốn xem", key=f"search_info_{m['item']}", type="tertiary",
+                             icon=":material/info:"):
+                    movie_dialog(m["item"], ratings)
             with st.expander("Phim tương tự"):
                 movie_grid(svc.similar(m["item"], k=6), f"sim{m['item']}", ratings)
 
@@ -637,6 +693,19 @@ def page_admin(ratings: dict[int, int]) -> None:
             st.rerun()
 
 
+def page_need_login(ratings: dict[int, int]) -> None:
+    """Khách mở /phim-cua-toi bằng đường dẫn."""
+    st.info("Trang này lưu các phim bạn đã chấm và danh sách muốn xem, nên cần đăng nhập.")
+    if st.button("Đăng nhập hoặc tạo tài khoản", key="need_login_btn", icon=":material/login:", type="primary"):
+        login_again()
+
+
+def page_not_admin(ratings: dict[int, int]) -> None:
+    """Người dùng thường mở /quan-tri bằng đường dẫn."""
+    st.warning("Trang quản trị chỉ dành cho tài khoản quản trị. Bạn có thể quay lại trang “Gợi ý cho bạn” "
+               "trên thanh điều hướng.")
+
+
 def _header(title: str, ratings: dict[int, int]) -> None:
     """Dòng đầu trang: tiêu đề bên trái, menu tài khoản bên phải (thay cho thanh bên)."""
     liked = sum(r >= 4 for r in ratings.values())
@@ -650,19 +719,26 @@ def _header(title: str, ratings: dict[int, int]) -> None:
         with st.popover(st.session_state.username, icon=":material/account_circle:", width="stretch"):
             st.metric("Số phim đã chấm", len(ratings))
             if liked >= MIN_RATINGS:
-                st.caption(f"Đã thích {liked} phim · gợi ý **cá nhân hóa đầy đủ** (kiến trúc hai tầng)")
+                st.caption(f"Đã thích {liked} phim · gợi ý **cá nhân hóa đầy đủ**")
             else:
                 st.caption(f"Đã thích {liked}/{MIN_RATINGS} phim · gợi ý **cơ bản**. Thích thêm {MIN_RATINGS - liked} "
                            "phim (chấm 4-5★) để được cá nhân hóa đầy đủ.")
             if st.button("Đăng xuất", key="logout_btn", icon=":material/logout:", width="stretch"):
-                st.session_state.clear()
-                st.rerun()
+                login_again()
 
 
 def main() -> None:
     st.logo(str(ROOT / "app" / "assets" / "logo.svg"), size="large")
     st.markdown(CSS, unsafe_allow_html=True)
+    if "asked_page" not in st.session_state:  # trang người dùng mở bằng đường dẫn (vd. /phim-cua-toi)
+        path = (st.context.url or "").split("?")[0].rstrip("/").rsplit("/", 1)[-1]
+        st.session_state.asked_page = path if path in PAGE_URLS - {"goi-y"} else ""
+    if st.session_state.pop("clear_cookie", False):
+        st.html(sess.cookie_script(None), unsafe_allow_javascript=True)
     if "user_id" not in st.session_state:
+        restore_session()
+    if "user_id" not in st.session_state:
+        st.session_state.go_asked = True  # đăng nhập xong thì mở trang đã yêu cầu thay vì trang chủ
         page_auth()
         return
     guest = is_guest()
@@ -674,20 +750,33 @@ def main() -> None:
              (page_search, "Tìm phim", ":material/search:", "tim-phim"),
              (page_semantic, "Tìm theo mô tả", ":material/manage_search:", "tim-theo-mo-ta"),
              (page_assistant, "Trợ lý phim", ":material/smart_toy:", "tro-ly")]
-    if not guest:
-        specs.append((page_history, "Phim của tôi", ":material/bookmarks:", "phim-cua-toi"))
-    if is_admin():
-        specs.append((page_admin, "Quản trị", ":material/admin_panel_settings:", "quan-tri"))
+    # Trang không có quyền vẫn được đăng ký (ẩn khỏi thanh điều hướng bằng CSS) để mở bằng đường dẫn thì hiện
+    # lời giải thích, thay vì hộp "Page not found" tiếng Anh của Streamlit.
+    hidden = []
+    specs.append((page_need_login if guest else page_history, "Phim của tôi", ":material/bookmarks:", "phim-cua-toi"))
+    hidden += ["phim-cua-toi"] if guest else []
+    specs.append((page_admin if is_admin() else page_not_admin, "Quản trị", ":material/admin_panel_settings:",
+                  "quan-tri"))
+    hidden += [] if is_admin() else ["quan-tri"]
+    if hidden:
+        st.html("<style>" + ",".join(f'a[href$="/{u}"]' for u in hidden) + "{display:none!important}</style>")
     # trang mở khi vào địa chỉ gốc; start_page trong session_state cho phép mở thẳng một trang (dùng khi kiểm thử)
     start = st.session_state.get("start_page", "goi-y")
-    start = start if start in {url for *_, url in specs} else "goi-y"
+    allowed = {url for *_, url in specs}
+    asked = st.session_state.get("asked_page", "")
+    start = start if start in allowed else "goi-y"
 
     def page(fn, title, icon, url):
         run = lambda: fn(ratings)  # noqa: E731
         run.__name__ = url.replace("-", "_")
         return st.Page(run, title=title, icon=icon, url_path=url, default=url == start)
 
-    current = st.navigation([page(*spec) for spec in specs], position="top")
+    pages = [page(*spec) for spec in specs]
+    current = st.navigation(pages, position="top")
+    if st.session_state.pop("go_asked", False) and asked in allowed - set(hidden) and current.url_path != asked:
+        st.switch_page(next(p for p in pages if p.url_path == asked))
+    if token := st.session_state.pop("set_cookie", None):  # sau switch_page để lần chạy bị bỏ dở không làm mất cookie
+        st.html(sess.cookie_script(token), unsafe_allow_javascript=True)
     _header("Quản trị hệ thống" if current.title == "Quản trị" else current.title, ratings)
     current.run()
     if (item := st.session_state.pop("open_item", None)) is not None:  # bấm "Chi tiết" ở phim tương tự trong cửa sổ
