@@ -1,0 +1,13 @@
+message,action,genres,exclude_genres,year_from,year_to,similar_to
+chào buổi tối,chat,,,0,0,
+bạn khỏe không,chat,,,0,0,
+có phim chiến tranh nào hay không,recommend,War,,0,0,
+muốn xem phim hoạt hình thập niên 90,recommend,Animation,,1990,1999,
+phim kinh dị nhưng không có hài,recommend,Horror,Comedy,0,0,
+gợi ý vài phim miền tây,recommend,Western,,0,0,
+phim nào giống Star Wars,similar,,,0,0,Star Wars
+"mình thích Forrest Gump, có phim gì tương tự không",similar,,,0,0,Forrest Gump
+phim về một con cá mập tấn công bãi biển,describe,,,0,0,
+phim về một người máy từ tương lai trở về quá khứ,describe,,,0,0,
+phim hài trước năm 1980,recommend,Comedy,,0,1980,
+cô gái bị kẹt trong một ngôi nhà ma,describe,,,0,0,

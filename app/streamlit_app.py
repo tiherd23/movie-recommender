@@ -43,7 +43,7 @@ STARS = ["Chưa chấm", "★", "★★", "★★★", "★★★★", "★★�
 
 # Thẻ phim cùng kích thước: poster tỉ lệ 2:3, tên tối đa 2 dòng, mô tả tối đa 3 dòng, để lưới phim thẳng hàng
 CSS = """<style>
-[data-testid="stMainBlockContainer"]{padding-top:2.2rem}
+[data-testid="stMainBlockContainer"]{padding-top:3.3rem}
 .mr-poster{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:8px;display:block;background:#2c3440;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
 .mr-noposter{width:100%;aspect-ratio:2/3;border-radius:8px;background:#2c3440;display:flex;align-items:center;
   justify-content:center;color:#678;font-size:2rem}
@@ -58,12 +58,23 @@ CSS = """<style>
   padding:2px 7px;border-radius:10px}
 .mr-reason{color:#ff9d3c;font-size:.74rem;line-height:1.3;margin-top:.35rem;height:2.6em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* phần tử chỉ chứa CSS/JS (cao 0) vẫn chiếm một khoảng cách giữa các phần tử: ẩn hẳn phần bao ngoài */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] style),
+[data-testid="stElementContainer"]:has(> [data-testid="stHtml"] > script),
+[data-testid="stLayoutWrapper"]:has(> .st-key-mobile_nav){display:none!important}
 /* màn hình hẹp (điện thoại): lưới phim 2 cột thay vì mỗi thẻ chiếm cả màn hình */
 @media (max-width: 640px){
   [data-testid="stHorizontalBlock"]:has(.mr-poster, .mr-noposter){flex-wrap:wrap!important;gap:.6rem!important}
   [data-testid="stHorizontalBlock"]:has(.mr-poster, .mr-noposter) > [data-testid="stColumn"]{
     width:calc(50% - .3rem)!important;flex:1 1 calc(50% - .3rem)!important;min-width:calc(50% - .3rem)!important}
   .mr-desc{display:none}
+  /* điện thoại: bỏ menu trượt bên trái (không tự đóng sau khi chọn trang), dùng hàng nút trang cuộn ngang */
+  [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"]{display:none!important}
+  [data-testid="stLayoutWrapper"]:has(> .st-key-mobile_nav){display:flex!important}
+  .st-key-mobile_nav{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto;gap:.4rem!important;
+    margin-top:.8rem;padding:.15rem 0 .3rem;scrollbar-width:none}
+  .st-key-mobile_nav > div{flex:0 0 auto!important;width:auto!important}
+  .st-key-mobile_nav a{white-space:nowrap;border:1px solid #2c3440;border-radius:16px;padding:.15rem .7rem!important}
 }
 </style>"""
 
@@ -377,6 +388,11 @@ def page_auth() -> None:
                    "đăng nhập để chấm điểm và nhận gợi ý cá nhân hóa.")
 
 
+def _save_diversity() -> None:
+    if not is_guest() and st.session_state.get("diversity"):
+        db.set_diversity(st.session_state.user_id, st.session_state.diversity)
+
+
 def _save_genres() -> None:
     if not is_guest():  # khách: chỉ giữ trong phiên làm việc
         db.set_genres(st.session_state.user_id, st.session_state.genre_select)
@@ -432,9 +448,10 @@ def page_home(ratings: dict[int, int]) -> None:
                          format_func=lambda g: GENRE_VI.get(g, g))
         # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) chỉ giảm NDCG@10 của kiến trúc
         # hai tầng 0,6% nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
-        level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY), default="Nhẹ", key="diversity",
-                                        required=True,
-                                        help=DIVERSITY_HELP)
+        saved = "" if guest else db.get_diversity(st.session_state.user_id)
+        level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY),
+                                        default=saved if saved in DIVERSITY else "Nhẹ", key="diversity",
+                                        required=True, on_change=_save_diversity, help=DIVERSITY_HELP)
         recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
                 if m["item"] not in shown][:18]
         chosen = f"thể loại bạn chọn ({genre_vi(genres)})" if genres else ""
@@ -739,7 +756,14 @@ def main() -> None:
         restore_session()
     if "user_id" not in st.session_state:
         st.session_state.go_asked = True  # đăng nhập xong thì mở trang đã yêu cầu thay vì trang chủ
-        page_auth()
+        # Trang đăng nhập có điều hướng riêng (ẩn): xóa thanh điều hướng của phiên trước (sau khi đăng xuất) và
+        # nhận mọi đường dẫn của ứng dụng, để mở /phim-cua-toi khi chưa đăng nhập không bị báo "Page not found".
+        auth = []
+        for url in ["goi-y", *sorted(PAGE_URLS - {"goi-y"})]:
+            run = lambda: page_auth()  # noqa: E731
+            run.__name__ = "dang_nhap_" + url.replace("-", "_")
+            auth.append(st.Page(run, title="Đăng nhập", url_path=url, default=url == "goi-y"))
+        st.navigation(auth, position="hidden").run()
         return
     guest = is_guest()
     ratings = {} if guest else db.ratings(st.session_state.user_id)
@@ -775,6 +799,10 @@ def main() -> None:
     current = st.navigation(pages, position="top")
     if st.session_state.pop("go_asked", False) and asked in allowed - set(hidden) and current.url_path != asked:
         st.switch_page(next(p for p in pages if p.url_path == asked))
+    with st.container(key="mobile_nav", horizontal=True):  # chỉ hiện trên màn hình hẹp (xem CSS)
+        for p in pages:
+            if p.url_path not in hidden:
+                st.page_link(p, label=p.title, icon=p.icon)
     if token := st.session_state.pop("set_cookie", None):  # sau switch_page để lần chạy bị bỏ dở không làm mất cookie
         st.html(sess.cookie_script(token), unsafe_allow_javascript=True)
     _header("Quản trị hệ thống" if current.title == "Quản trị" else current.title, ratings)

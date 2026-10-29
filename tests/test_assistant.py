@@ -194,6 +194,9 @@ def test_rule_intent_without_llm():
     assert (mix["year_from"], mix["year_to"]) == (1990, 1999)
     assert rule_intent("phim kinh dị sau 1995", genres)["year_from"] == 1995
     assert rule_intent("phim hoạt hình cho trẻ em", genres)["genres"] == ["Children's"]
+    assert rule_intent("phim nào giống Star Wars", genres + ["War"])["genres"] == []  # tên phim không phải thể loại
+    assert rule_intent("gợi ý vài phim hài", genres)["action"] == "recommend"  # chỉ nêu thể loại: gợi ý + lọc
+    assert rule_intent("phim về một con cá mập", genres)["action"] == "describe"
 
 
 def test_more_and_similar_work_without_llm():

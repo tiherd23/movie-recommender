@@ -185,6 +185,7 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.run()
     assert "chỉ dành cho tài khoản quản trị" in at.warning[0].value and not [m for m in at.metric if m.label == "Tài khoản"]
     at.button(key="logout_btn").click().run()
+    at.run()  # AppTest: chạy lại một lần để trang đăng nhập ổn định sau khi đổi bộ điều hướng
     at.text_input(key="reg_user").set_value("admin")  # tên quản trị không tự đăng ký được trên web
     at.text_input(key="reg_pw").set_value("12345")
     at.button(key="reg_btn").click().run()

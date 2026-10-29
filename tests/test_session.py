@@ -36,3 +36,18 @@ def test_register_validates_username_and_password(tmp_path):
     uid = db.register("phu_nguyen.2", "12345")
     assert db.user(uid)[0] == "phu_nguyen.2" and db.user(999) is None
     assert db.register("Phú", "12345")  # chữ tiếng Việt có dấu vẫn được
+
+
+def test_diversity_saved_and_old_db_migrated(tmp_path):
+    import sqlite3
+
+    old = tmp_path / "old.db"  # cơ sở dữ liệu tạo từ bản cũ, chưa có cột diversity
+    con = sqlite3.connect(old)
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, "
+                "salt BLOB NOT NULL, pw_hash BLOB NOT NULL, genres TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL)")
+    con.execute("INSERT INTO users (username, salt, pw_hash, created_at) VALUES ('cu', x'00', x'00', 0)")
+    con.commit(); con.close()
+    db = Database(old)
+    assert db.get_diversity(1) == ""  # tài khoản cũ còn nguyên, chưa chọn mức nào
+    db.set_diversity(1, "Mạnh")
+    assert Database(old).get_diversity(1) == "Mạnh"

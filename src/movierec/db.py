@@ -43,6 +43,11 @@ class Database:
             );
             """
         )
+        # cột thêm sau: cơ sở dữ liệu tạo từ bản cũ chưa có thì bổ sung, dữ liệu cũ giữ nguyên
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(users)")}
+        if "diversity" not in cols:
+            with self.conn:
+                self.conn.execute("ALTER TABLE users ADD COLUMN diversity TEXT NOT NULL DEFAULT ''")
 
     def register(self, username: str, password: str, reserved: set[str] | frozenset[str] = frozenset()) -> int:
         """reserved: tên dành riêng (tài khoản quản trị), không cho tự đăng ký trên web; tạo bằng scripts/create_admin.py."""
@@ -80,6 +85,15 @@ class Database:
     def set_genres(self, user_id: int, genres: list[str]) -> None:
         with self.conn:
             self.conn.execute("UPDATE users SET genres = ? WHERE id = ?", ("|".join(genres), user_id))
+
+    def set_diversity(self, user_id: int, level: str) -> None:
+        """Mức đa dạng thể loại người dùng chọn ở trang gợi ý ("Không", "Nhẹ", "Vừa", "Mạnh")."""
+        with self.conn:
+            self.conn.execute("UPDATE users SET diversity = ? WHERE id = ?", (level, user_id))
+
+    def get_diversity(self, user_id: int) -> str:
+        row = self.conn.execute("SELECT diversity FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row[0] if row else ""
 
     def get_genres(self, user_id: int) -> list[str]:
         row = self.conn.execute("SELECT genres FROM users WHERE id = ?", (user_id,)).fetchone()

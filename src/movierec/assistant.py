@@ -240,6 +240,11 @@ GENRE_WORDS = {
 _GREETING = re.compile(r"^(xin chào|chào|hello|hi|alo|cảm ơn|cám ơn|thanks?|ok|oke)\b", re.I)
 _MORE = re.compile(r"(còn phim|phim khác|phim nào khác|thêm phim|gợi ý thêm|thêm vài|khác không|nữa không)", re.I)
 _SIMILAR = re.compile(r"(?:giống|tương tự|như)\s+(?:phim\s+)?(.+)", re.I)
+_TITLE_BEFORE = re.compile(r"(?:thích|xem|mê)\s+(?:phim\s+)?(.+?)\s+(?:có phim|phim nào|có gì|tương tự)", re.I)
+# từ chung chung của một câu xin gợi ý; bỏ hết các từ này (và từ thể loại, năm) mà còn lại rất ít thì câu không có mô tả nội dung
+_FILLER = set("""gợi ý cho mình tôi em anh chị vài một ít mấy phim bộ muốn xem coi có nào hay không nhé nha đi ạ với
+    hả gì đó thể loại kiểu loại về được tìm giúp nhưng mà và hoặc đừng trừ ngoại bỏ qua phải sau trước từ năm những
+    thập niên kỷ tối nay bây giờ hôm cuối tuần cần một vài""".split())
 _NEGATE = re.compile(r"(đừng|không có|không muốn|không phải|trừ|ngoại trừ|bỏ qua)", re.I)
 
 
@@ -253,20 +258,35 @@ def rule_intent(message: str, genres: list[str]) -> dict:
     raw: dict = {"action": "describe", "description": message, "more": bool(_MORE.search(text))}
     if raw["more"] and len(text.split()) <= 8:
         raw["description"] = ""
-    sim = _SIMILAR.search(" ".join(message.split()))  # giữ nguyên chữ hoa của tên phim
+    flat = " ".join(message.split())  # giữ nguyên chữ hoa của tên phim
+    sim = _SIMILAR.search(flat)
     if sim:
         name = re.sub(r"[?.!]+$|\s+(không|nhé|nha|đi|ạ|với)$", "", sim.group(1).strip(), flags=re.I).strip()
+        if name.lower() in _FILLER or not name:  # "thích X, có phim nào tương tự không": tên phim nằm trước
+            before = _TITLE_BEFORE.search(flat)
+            name = before.group(1).strip(" ,") if before else ""
         if name:
             raw.update(action="similar", similar_to=name, description="")
+    if raw.get("similar_to"):  # tên phim mẫu không phải là thể loại ("Star Wars" không có nghĩa là phim chiến tranh)
+        text = text.replace(raw["similar_to"].lower(), " ")
     neg = _NEGATE.search(text)
     want, avoid = [], []
     for genre, words in GENRE_WORDS.items():
         for w in words:
-            pos = text.find(w)
+            hit = re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", text)  # trọn từ: "war" không khớp "wars"
+            pos = hit.start() if hit else -1
             if pos >= 0:
                 (avoid if neg and pos > neg.start() else want).append(genre)
                 break
     raw.update(genres=want, exclude_genres=avoid)
+    if raw["action"] == "describe" and not raw["more"]:
+        # câu chỉ nêu thể loại/năm (vd. "gợi ý phim hài, đừng có lãng mạn"): gợi ý theo sở thích + lọc, không tìm theo nghĩa
+        rest = text
+        for w in sorted({w for ws in GENRE_WORDS.values() for w in ws}, key=len, reverse=True):
+            rest = rest.replace(w, " ")
+        rest = re.sub(r"\b\d+\b|[^\w\s]", " ", rest)
+        if not [t for t in rest.split() if t not in _FILLER]:
+            raw.update(action="recommend", description="")
     decade = re.search(r"(?:thập niên|những năm|thập kỷ)\s*(?:19)?(\d0)\b", text)
     if decade:
         start = 1900 + int(decade.group(1))
