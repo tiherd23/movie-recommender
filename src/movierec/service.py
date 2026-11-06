@@ -288,7 +288,7 @@ class RecommenderService:
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
             else:
                 reason = self.popular_reason(int(j))
-            extra = {}
+            extra = {"added": True} if j in added else {}
             if factors:  # phim nguồn của từng yếu tố, để ô "Vì sao?" nói cùng một điều với dòng lý do
                 extra["why"] = factors
                 extra["why_src"] = {g: name(g) for g in ("als", "knn", "content") if liked}

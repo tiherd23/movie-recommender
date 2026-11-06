@@ -34,9 +34,13 @@ ADMINS = {u.strip() for u in os.environ.get("MOVIEREC_ADMINS", "admin").split(",
 MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 DIVERSITY = {"Không": 0.0, "Nhẹ": 0.2, "Vừa": 0.4, "Mạnh": 0.6}  # 1 - lam của MMR
 # Kết quả đo trên tập test cho kiến trúc hai tầng, 10 phim mỗi người (results/mmr.csv, scripts/beyond_accuracy.py)
-DIVERSITY_HELP = ("Xếp lại 50 phim điểm cao nhất để danh sách trải đều nhiều thể loại hơn. Đo trên tập kiểm tra "
-                  "(10 phim mỗi người, so với “Không”): **Nhẹ** thêm 0,8 thể loại, độ chính xác NDCG@10 không giảm; "
-                  "**Vừa** thêm 1,8 thể loại, giảm 2,8%; **Mạnh** thêm 2,8 thể loại, giảm 8,1%.")
+DIVERSITY_HELP = ("Trộn thêm phim thuộc thể loại khác vào danh sách để đỡ nhàm. **Không**: chỉ xếp theo mức độ hợp "
+                  "với bạn. **Nhẹ** (mặc định): thêm vài thể loại, gần như không kém đi. **Vừa**, **Mạnh**: đa dạng "
+                  "hơn nữa, đổi lại có thêm vài phim ít hợp hơn.")
+# Số liệu đo trên tập kiểm tra của các mức đa dạng (results/mmr.csv), hiện trong khung "Mô hình"
+DIVERSITY_NOTE = ("Độ đa dạng (xếp lại 50 phim điểm cao nhất bằng MMR), đo trên tập kiểm tra so với mức “Không”: "
+                  "Nhẹ thêm 0,8 thể loại mỗi danh sách 10 phim, NDCG@10 0,1009 (không giảm); Vừa thêm 1,8 thể loại, "
+                  "giảm 2,8%; Mạnh thêm 2,8 thể loại, giảm 8,1%.")
 RESULTS_PATH = os.environ.get("MOVIEREC_RESULTS", str(ROOT / "results" / "summary.csv"))
 # Tên tiếng Việt và mô tả ngắn của các mô hình trong bảng kết quả thực nghiệm (results/summary.csv)
 MODEL_VI = {
@@ -248,26 +252,51 @@ def rating_stars(item: int, prefix: str, ratings: dict[int, int]) -> None:
 
 
 GROUP_OF_LABEL = {label: group for group, label in FEATURE_GROUPS.items()}
+# Tên hiển thị trong ô "Vì sao?": trung tính, vì ▲/▼ chỉ là hướng tác động so với một phim ứng viên trung bình (vd.
+# "▼ điểm trung bình" ở một phim 4,5★ nghĩa là điểm cao này đẩy phim lên ít hơn ở các ứng viên khác, không phải phim dở).
+WHY_LABEL = {
+    "als": "Người có gu giống bạn cũng thích",
+    "knn": "Hay được xem cùng phim bạn đã chấm",
+    "content": "Nội dung gần với phim bạn thích",
+    "pop": "Số lượt chấm của phim",
+    "genre": "Thể loại so với gu của bạn",
+    "quality": "Điểm trung bình và tỉ lệ thích của phim",
+    "year": "Năm phát hành",
+    "item_genre": "Thể loại của phim",
+    "sources": "Số mô hình cùng đề cử",
+    "user": "Thói quen chấm điểm của bạn",
+}
 
 
-def why_box(factors: list[tuple[str, float]], src: dict[str, str] | None = None) -> None:
+def why_box(factors: list[tuple[str, float]], src: dict[str, str] | None = None, m: dict | None = None) -> None:
     """Các yếu tố ảnh hưởng mạnh nhất đến thứ hạng của phim (giá trị SHAP của bộ xếp hạng, gộp theo nhóm đặc trưng),
     hiện thành phần trăm đóng góp để người dùng không phải đọc giá trị SHAP thô. src: phim đã thích đóng góp nhiều
     nhất cho từng nhóm (ALS, ItemKNN, nội dung), cùng nguồn với dòng lý do trên thẻ phim."""
-    src = src or {}
+    src, m = src or {}, m or {}
+    if m.get("added"):
+        st.caption(f"Phim này có mặt vì bạn đã chọn thể loại: ít nhất {math.ceil(18 * GENRE_SHARE)}/18 phim phải "
+                   "thuộc các thể loại đó. Riêng mô hình xếp phim này thấp hơn, nên các yếu tố dưới đây có thể "
+                   "nghiêng về ▼.")
+    info = m.get("stats") or {}
+    value = {"quality": f"★ {fmt(info['mean'], 1)} · {info['like_frac']:.0%} thích" if "mean" in info else "",
+             "pop": f"{fmt(info['n'])} lượt chấm" if "n" in info else "",
+             "year": "".join(re.findall(r"\((\d{4})\)\s*$", m.get("title", "")))}
     total = sum(abs(v) for _, v in factors) or 1.0
     for label, v in factors:
         share = abs(v) / total
         group = GROUP_OF_LABEL.get(label)
-        label = re.sub(r"\s*\([^)]*\)$", "", label)  # bỏ tên thuật toán trong ngoặc
+        label = WHY_LABEL.get(group) or re.sub(r"\s*\([^)]*\)$", "", label)
+        if value.get(group):
+            label += f" ({value[group]})"
         color = "#00e054" if v > 0 else "#ff5c5c"
         bar = "█" * max(1, round(8 * share))
         note = (f"<br><span style='color:#9ab'>chủ yếu từ: {html.escape(src[group])}</span>"
                 if v > 0 and group in src else "")
         st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {html.escape(label)}<br>"
                     f"<span style='color:{color}'>{bar}</span> {share:.0%}{note}</span>", unsafe_allow_html=True)
-    st.caption("Phần trăm cho biết mỗi yếu tố chiếm bao nhiêu trong lý do xếp hạng phim này; ▲ đẩy phim lên, "
-               "▼ kéo xuống.")
+    st.caption(f"Phần trăm: tỉ lệ của mỗi yếu tố trong {len(factors)} yếu tố ảnh hưởng mạnh nhất tới thứ hạng của "
+               "phim này (giá trị SHAP của bộ xếp hạng). ▲ đẩy phim lên, ▼ kéo xuống, so với một phim ứng viên trung "
+               "bình; ▼ không có nghĩa là phim dở.")
 
 
 def description(m: dict) -> str:
@@ -386,7 +415,7 @@ def movie_card(m: dict, prefix: str, ratings: dict[int, int]) -> None:
                 movie_dialog(m["item"], ratings)
             if m.get("why"):
                 with st.popover("Vì sao?", type="tertiary"):
-                    why_box(m["why"], m.get("why_src"))
+                    why_box(m["why"], m.get("why_src"), m)
 
 
 def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: int = 6) -> None:
@@ -530,9 +559,12 @@ def model_info(method: str, liked: int) -> None:
             "So với Phổ biến": [str(v).replace(".", ",") for v in table["vs Popularity"]],
             "Trên web": [("✔ đang dùng" if i == key else use[i]) if i in use else "" for i in table.index],
         }), hide_index=True, width="stretch")
-        st.caption("Kết quả trên tập kiểm tra MovieLens 1M (6.040 người, phim chấm cuối cùng của mỗi người), 10 phim "
-                   "mỗi danh sách. NDCG@10: phim người dùng thực sự thích có nằm trong top 10 và nằm càng cao càng tốt. "
-                   "Độ phủ: tỉ lệ kho phim từng được gợi ý cho ít nhất một người.")
+        st.caption("Tập kiểm tra: 10% lượt chấm cuối cùng (theo thời gian) của mỗi người dùng MovieLens 1M; điểm tính "
+                   "trên 5.741 người có ít nhất một phim chấm 4-5★ trong phần đó, mỗi người đã có lịch sử chấm đầy đủ "
+                   "phía trước. NDCG@10: các phim họ thực sự thích có nằm trong top 10 không, nằm càng cao càng tốt. "
+                   "Độ phủ: tỉ lệ kho phim từng được gợi ý cho ít nhất một người. Số trên dòng tiêu đề là ở mức đa "
+                   "dạng “Không”.")
+        st.caption(DIVERSITY_NOTE)
         st.caption("SASRec cao nhất nhưng không dùng trên web: gần như toàn bộ lợi thế của nó đến từ thứ tự chấm điểm "
                    "(xáo trộn thứ tự thì NDCG@10 còn 0,0663, thấp hơn kiến trúc hai tầng). Trên web, người dùng chấm "
                    "theo thứ tự phim hiện ra trên trang chứ không theo thứ tự đã xem, nên thứ tự đó không mang thông tin.")
@@ -609,7 +641,8 @@ def page_home(ratings: dict[int, int]) -> None:
                        + f"Thích thêm {MIN_RATINGS - liked} phim (chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
         n_genres = len({g for m in recs for g in m["genres"].split("|")})
         st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
-        model_info(method, liked)
+        if not guest:  # khách chưa có gợi ý riêng, không cần thông tin mô hình
+            model_info(method, liked)
         if hold is not None:
             n_new = sum(m["item"] in ratings for m in recs)
             with st.container(border=True, horizontal=True, vertical_alignment="center"):
