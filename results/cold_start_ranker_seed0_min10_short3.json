@@ -1,0 +1,7 @@
+{
+  "rows": 3105984,
+  "groups": 16032,
+  "best_iteration": 26,
+  "holdout_ndcg@10": 0.12821432845313363,
+  "short_profiles_per_user": 3
+}

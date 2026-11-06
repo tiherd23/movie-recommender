@@ -45,7 +45,7 @@ RESULTS_PATH = os.environ.get("MOVIEREC_RESULTS", str(ROOT / "results" / "summar
 COLD_PATH = str(ROOT / "results" / "cold_start_pooled.csv")  # thí nghiệm người dùng mới (scripts/cold_start*.py)
 COLD_LEVELS = [1, 2, 3, 5, 7, 10, 15, 20, 30]
 # tên mô hình trong results/cold_start_pooled.csv -> tên hiển thị
-COLD_MODELS = {"Trộn, w(n)=60·n^-1": "Công thức trộn, trọng số phổ biến 60/n (web dùng)",
+COLD_MODELS = {"Trộn, w(n)=120·n^-1": "Công thức trộn, trọng số phổ biến 120/n (web dùng)",
                "Hai tầng (học cả hồ sơ ngắn)": "Hai tầng, học cả hồ sơ ngắn (chế độ thử nghiệm)",
                "Công thức trộn": "Công thức trộn, trọng số cố định",
                "Hai tầng": "Hai tầng, bản của thực nghiệm chính",
@@ -535,8 +535,8 @@ def _track_changes(recs: list[dict], ratings: dict[int, int], ctx: tuple) -> str
             n_new = sum(v == "new" for v in changes.values())
             n_up = len(changes) - n_new
             if prev["method"] < MIN_RATINGS <= method:
-                summary = (f"🎉 Đã thích {MIN_RATINGS} phim: gợi ý giờ bám sát sở thích của bạn hơn hẳn. Lần chấm "
-                           f"vừa rồi đưa {n_new} phim mới vào danh sách, {n_up} phim lên hạng")
+                summary = (f"🎉 Đã thích {MIN_RATINGS} phim. Lần chấm vừa rồi đưa {n_new} phim mới vào danh sách, "
+                           f"{n_up} phim lên hạng (nhãn trên poster)")
             elif changes:
                 summary = (f"Sau lần chấm vừa rồi: {n_new} phim mới vào danh sách, {n_up} phim lên hạng "
                            "(nhãn trên poster)")
@@ -566,9 +566,9 @@ def model_info(method: str, liked: int) -> None:
                   "viên. Tầng 2: LightGBM (LambdaRank) xếp hạng lại các ứng viên; bản này được huấn luyện thêm với hồ "
                   "sơ ngắn mô phỏng người dùng mới. Bấm “Vì sao?” để xem đóng góp của từng yếu tố (giá trị SHAP).")
     elif liked:
-        key, short = "Trộn, w(n)=60·n^-1", "Công thức trộn ALS + ItemKNN + nội dung + phổ biến"
+        key, short = "Trộn, w(n)=120·n^-1", "Công thức trộn ALS + ItemKNN + nội dung + phổ biến"
         detail = (f"Điểm của Implicit ALS, ItemKNN, nội dung và độ phổ biến được chuẩn hóa rồi cộng có trọng số. "
-                  f"Trọng số độ phổ biến bằng 60/n với n là số phim bạn đã thích (hiện là {fmt(60 / liked, 1)}): "
+                  f"Trọng số độ phổ biến bằng 120/n với n là số phim bạn đã thích (hiện là {fmt(svc.pop_weight(liked), 1)}): "
                   "càng biết nhiều về bạn, gợi ý càng dựa vào sở thích riêng thay vì độ phổ biến. Thí nghiệm người "
                   "dùng mới bên dưới cho thấy đây là cách chính xác nhất khi mỗi người chỉ mới chấm vài chục phim, "
                   "chính xác hơn kiến trúc hai tầng. Bấm “Vì sao?” để xem đóng góp đúng của từng thành phần.")
@@ -584,7 +584,7 @@ def model_info(method: str, liked: int) -> None:
         if svc.ranker is not None and liked:
             st.toggle("Thử nghiệm: dùng kiến trúc hai tầng (LightGBM) thay cho công thức trộn", key="exp_two_stage",
                       help="Mô hình phức tạp nhất của đồ án, giải thích bằng SHAP. Với người dùng mới, nó kém công "
-                           "thức trộn khoảng 11% (bảng bên dưới), nên chỉ là chế độ thử nghiệm.")
+                           "thức trộn khoảng 7-13% (bảng bên dưới), nên chỉ là chế độ thử nghiệm.")
         if cold is not None:
             st.markdown("**Người dùng mới:** NDCG@10 theo số phim đã thích")
             cols = [c for c in COLD_MODELS if c in cold.columns]
@@ -592,10 +592,11 @@ def model_info(method: str, liked: int) -> None:
             st.dataframe(pd.DataFrame({"Mô hình": [COLD_MODELS[c] for c in cols],
                                        **{f"{n} phim": [fmt(tab.loc[n, c], 4) for c in cols] for n in tab.index}}),
                          hide_index=True, width="stretch")
-            st.caption("4.000 người dùng MovieLens được loại hẳn khỏi dữ liệu huấn luyện rồi “đăng ký mới” với n phim "
-                       "thích lấy từ lịch sử của họ; đo trên các phim họ thực sự thích về sau (10% lượt chấm cuối). Trọng "
-                       "số 60/n được chọn trên một nhóm 1.000 người khác. Trung bình trên các mức n, công thức trộn này "
-                       "hơn kiến trúc hai tầng 11% và hơn độ phổ biến 15% (có ý nghĩa thống kê).")
+            st.caption("Người dùng MovieLens có từ 30 phim thích được chia thành 5 phần rời nhau; mỗi lần, một phần bị loại "
+                       "hẳn khỏi dữ liệu huấn luyện rồi “đăng ký mới” với n phim thích lấy từ lịch sử của họ, và được đo trên "
+                       "các phim họ thích về sau (10% lượt chấm cuối). Trọng số 120/n được chọn trên một phần riêng; bảng "
+                       "là kết quả trên 4 phần còn lại (3.307 người). Trung bình trên các mức n, công thức trộn này hơn kiến "
+                       "trúc hai tầng 12,9% và hơn độ phổ biến 14,9% (có ý nghĩa thống kê).")
         res = get_results(RESULTS_PATH, _mtime(RESULTS_PATH))
         if res is None:
             return

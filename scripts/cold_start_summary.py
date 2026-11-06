@@ -1,4 +1,4 @@
-"""Gộp các nhóm kiểm tra của scripts/cold_start.py (seed 0, 2, 3, 4; seed 1 là nhóm phát triển, không gộp) và kiểm định.
+"""Gộp các phần kiểm tra của scripts/cold_start.py (phần 0, 2, 3, 4, rời nhau; phần 1 là tập phát triển, không gộp) và kiểm định.
 
 Chỉ số chính (đặt trước): NDCG@10 trung bình của mỗi người trên các mức n = 1, 2, 3, 5, 7, 10, 15, 20, 30 phim thích.
 Phép so sánh chính, hiệu chỉnh Holm: công thức trộn với trọng số phổ biến w(n) (mô hình chọn cho web)
@@ -17,17 +17,26 @@ from scipy.stats import wilcoxon
 
 ROOT = Path(__file__).resolve().parents[1]
 FULL = 10_000
-CHOSEN = "Trộn, w(n)=60·n^-1"  # w(n) = 60/n, chọn trên nhóm phát triển (seed 1, hai loại người dùng)
+CHOSEN = "Trộn, w(n)=120·n^-1"  # chọn trên tập phát triển (phần 1) theo chỉ số chính, trung bình hai loại người dùng
 PRIMARY = ["Hai tầng (học cả hồ sơ ngắn)", "Phổ biến nhất"]
-SECONDARY = ["Công thức trộn", "Hai tầng", "Trộn, w(n)=60·n^-0.8"]
+SECONDARY = ["Công thức trộn", "Hai tầng", "Trộn, w(n)=60·n^-0.8", "Trộn, w(n)=60·n^-1"]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pool", choices=["nang", "nhe"], default="nang",
                     help="nang: người có ≥ 30 phim thích; nhe: người có ≥ 10 phim thích (file *_min10)")
+    ap.add_argument("--dev", action="store_true",
+                    help="chỉ tính chỉ số chính cho mọi mô hình trên tập phát triển (phần 1) để chọn tham số")
     args = ap.parse_args()
     suf = "_min10" if args.pool == "nhe" else ""
+    if args.dev:
+        df = pd.read_csv(ROOT / "results" / f"cold_start_users_seed1_pop{suf}.csv")
+        df = df[(df["n"] != FULL) & (df["n"] <= (30 if args.pool == "nang" else 10))]
+        out = df.groupby(["user", "model"])["ndcg"].mean().unstack().mean().sort_values(ascending=False)
+        out.round(5).to_csv(ROOT / "results" / f"cold_start_dev_choice{suf}.csv", header=["chỉ số chính"])
+        print(out.round(5).to_string())
+        return
     files = {0: f"cold_start_users{suf}.csv", 2: f"cold_start_users_seed2{suf}.csv",
              3: f"cold_start_users_seed3{suf}.csv", 4: f"cold_start_users_seed4{suf}.csv"}
     df = pd.concat([pd.read_csv(ROOT / "results" / f).assign(seed=s) for s, f in files.items()], ignore_index=True)

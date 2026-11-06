@@ -18,7 +18,7 @@ def service(fake_ml1m, tmp_path_factory):
     path = tmp_path_factory.mktemp("art") / "service.pkl"
     svc.save(path)
     svc = RecommenderService.load(path)
-    # Dữ liệu giả chỉ có 120 phim và tín hiệu sở thích yếu hơn nhiều so với MovieLens, nên trọng số độ phổ biến 60/n
+    # Dữ liệu giả chỉ có 120 phim và tín hiệu sở thích yếu hơn nhiều so với MovieLens, nên trọng số độ phổ biến 120/n
     # (chọn trên MovieLens) sẽ lấn át; hạ xuống để các test kiểm tra được phần cá nhân hóa.
     svc.pop_c = 1.0
     return svc, path
@@ -40,8 +40,8 @@ def test_service_modes(service):
 
 
 def test_blend_explanation_is_exact(service):
-    """Công thức trộn: các thành phần trong "Vì sao?" cộng lại đúng bằng điểm; trọng số phổ biến = POP_C / n."""
-    from movierec.service import POP_C, RecommenderService, _z
+    """Công thức trộn: các thành phần trong "Vì sao?" cộng lại đúng bằng điểm; trọng số phổ biến = POP_C * n^-POP_P."""
+    from movierec.service import POP_C, POP_P, RecommenderService, _z
 
     svc, path = service
     liked = list(range(0, 24, 4))
@@ -49,8 +49,9 @@ def test_blend_explanation_is_exact(service):
     knn = svc.sim[liked].toarray()
     score = svc._blend_score(liked, [], als, knn)
     parts = svc._blend_parts(liked, [], als, knn)
-    assert np.allclose(parts["pop"], svc.pop_c / len(liked) * _z(np.log1p(svc.pop)))
-    assert RecommenderService.load(path).pop_c == POP_C == 60  # web dùng 60/n
+    assert np.allclose(parts["pop"], svc.pop_c * len(liked) ** -svc.pop_p * _z(np.log1p(svc.pop)))
+    web = RecommenderService.load(path)
+    assert (web.pop_c, web.pop_p) == (POP_C, POP_P) == (120, 1.0) and web.pop_weight(5) == 24
     for j, factors in zip(range(5), svc._explain_blend(list(range(5)), liked, [], als, knn)):
         assert len(factors) == 4 and abs(sum(v for _, v in factors) - score[j]) < 1e-4
 

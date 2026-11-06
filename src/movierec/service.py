@@ -23,10 +23,12 @@ from .tmdb import IMAGE_BASE
 
 DEFAULT_ARTIFACT = ROOT / "artifacts" / "service.pkl"
 LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
-# Trọng số độ phổ biến trong công thức trộn của web: w(n) = POP_C / n với n = số phim đã thích. Ít dữ liệu thì dựa
-# nhiều vào độ phổ biến, nhiều dữ liệu thì dựa vào sở thích riêng (co rút về phân phối chung). Chọn trên nhóm phát
-# triển của thí nghiệm người dùng mới (scripts/cold_start.py); với n khoảng 240 thì bằng trọng số 0,25 của Hybrid offline.
-POP_C = 60.0
+# Trọng số độ phổ biến trong công thức trộn của web: w(n) = POP_C * n^(-POP_P) với n = số phim đã thích. Ít dữ liệu thì
+# dựa nhiều vào độ phổ biến, nhiều dữ liệu thì dựa vào sở thích riêng (co rút về phân phối chung). Chọn trên tập phát
+# triển của thí nghiệm người dùng mới (scripts/cold_start.py, phần 1): w(n) = 120 / n, tức w(1) = 120, w(5) = 24,
+# w(30) = 4; với n = 480 thì bằng trọng số 0,25 của mô hình lai trong thực nghiệm chính.
+POP_C = 120.0
+POP_P = 1.0
 DISLIKE = 2  # chấm từ số sao này trở xuống là không thích
 GENRE_SHARE = 0.5  # đã chọn thể loại (và đã thích ít nhất 1 phim) thì ít nhất nửa danh sách thuộc các thể loại đó
 
@@ -89,7 +91,7 @@ class RecommenderService:
         self.ranker = ranker  # None: chưa huấn luyện bộ xếp hạng, chỉ dùng công thức trộn
         self.item_vecs = content.item_vecs_
         self.reg, self.alpha, self.weights = reg, alpha, weights
-        self.pop_c = POP_C  # trọng số độ phổ biến của công thức trộn = pop_c / số phim thích
+        self.pop_c, self.pop_p = POP_C, POP_P  # trọng số độ phổ biến = pop_c * (số phim thích)^(-pop_p)
         self._gram = self.Y.T @ self.Y + reg * np.eye(self.Y.shape[1], dtype=np.float32)
         self._title_lower = movies["title"].str.lower()
         self._title_tokens = [_norm_text(display_title(t)) for t in movies["title"]]
@@ -151,7 +153,7 @@ class RecommenderService:
             if profile_ranker:
                 from .profile_ranker import fit_profile_ranker
 
-                booster, _, two = fit_profile_ranker(ds, als_p, knn_p, weights)
+                booster, _, two = fit_profile_ranker(ds, als_p, knn_p, weights, short=3)  # 3 hồ sơ ngắn/người
                 two.booster_ = booster
             else:
                 two = TwoStageRanker(als_p, knn_p, use_demographics=False)
@@ -255,7 +257,7 @@ class RecommenderService:
         diversity (0..1): mức đa dạng thể loại. > 0 thì xếp hạng lại 50 phim điểm cao nhất bằng MMR với
         lam = 1 - diversity (xem movierec.beyond); 0 giữ nguyên thứ tự của mô hình.
 
-        mode="blend" (mặc định của web): công thức trộn với trọng số độ phổ biến POP_C / n. Thí nghiệm người dùng
+        mode="blend" (mặc định của web): công thức trộn với trọng số độ phổ biến POP_C * n^-POP_P. Thí nghiệm người dùng
         mới cho thấy đây là cách tốt nhất với hồ sơ ngắn (scripts/cold_start.py, results/cold_start_tests.csv).
         mode="two_stage": kiến trúc hai tầng (chế độ thử nghiệm trên web, cần ít nhất 1 phim thích), giải thích
         bằng SHAP. Công thức trộn được giải thích bằng cách tách đúng đóng góp của từng thành phần.
@@ -421,9 +423,13 @@ class RecommenderService:
         parts["content"] = ((w_cb if liked else 1.0) * _z(self.item_vecs @ profile) if np.linalg.norm(profile) > 0
                             else np.zeros(n, dtype=np.float32))
         # log1p: số lượt thích lệch rất mạnh về vài phim, lấy log để phim nổi tiếng không lấn át.
-        # Trọng số POP_C / n: ít phim thích thì dựa nhiều vào độ phổ biến (w_pop của Hybrid offline không dùng ở web).
-        parts["pop"] = (self.pop_c / len(liked) if liked else 1.0) * _z(np.log1p(self.pop))
+        # Trọng số POP_C * n^-POP_P: ít phim thích thì dựa nhiều vào độ phổ biến (w_pop của Hybrid offline không dùng ở web).
+        parts["pop"] = (self.pop_weight(len(liked)) if liked else 1.0) * _z(np.log1p(self.pop))
         return parts
+
+    def pop_weight(self, n_liked: int) -> float:
+        """Trọng số độ phổ biến của công thức trộn khi người dùng đã thích n_liked phim."""
+        return float(self.pop_c * n_liked ** -self.pop_p)
 
     def _blend_score(self, liked: list[int], genres: list[str], als_score, knn_part) -> np.ndarray:
         """Công thức trộn: tổng các thành phần của _blend_parts."""

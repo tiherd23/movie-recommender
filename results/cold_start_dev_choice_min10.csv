@@ -1,0 +1,16 @@
+model,chỉ số chính
+"Trộn, w(n)=40·n^-1.5",0.07336
+"Trộn, w(n)=30·n^-1",0.07302
+"Trộn, w(n)=60·n^-1.2",0.07288
+"Trộn, w(n)=60·n^-1",0.07258
+"Trộn, w(n)=60·n^-0.8",0.07219
+"Trộn, phổ biến 16",0.07179
+"Trộn, w(n)=100·n^-1.2",0.07168
+"Trộn, w(n)=120·n^-1",0.07078
+"Trộn, phổ biến 4",0.07049
+Hai tầng (học cả hồ sơ ngắn),0.0694
+"Trộn, phổ biến 1",0.06808
+Công thức trộn,0.06722
+Implicit ALS,0.06324
+Phổ biến nhất,0.0626
+Hai tầng,0.05608

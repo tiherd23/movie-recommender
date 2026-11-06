@@ -74,7 +74,7 @@ def train_booster(X: np.ndarray, y: np.ndarray, groups: np.ndarray, owners: np.n
 
 
 def fit_profile_ranker(ds: Dataset, als_p: dict, knn_p: dict, weights: list[float], seed: int = 42,
-                       short: int = 1, full: bool = True):
+                       short: int = 3, full: bool = True):
     """Học tầng 1 trên ds.train, tạo nhóm hồ sơ (đầy đủ + ngắn) với nhãn ds.val, huấn luyện LightGBM.
     Trả về (booster, thông tin, TwoStageRanker chứa tầng 1 và thống kê phim)."""
     from scipy import sparse

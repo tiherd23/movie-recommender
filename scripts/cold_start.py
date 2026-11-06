@@ -1,7 +1,9 @@
 """Thí nghiệm người dùng mới (cold-start): độ chính xác theo số phim đã thích, để chọn ngưỡng chuyển sang hai tầng.
 
 Mô phỏng đúng tình huống trên web:
-  1. Chọn ngẫu nhiên N người dùng MovieLens làm "người dùng mới" và LOẠI HẲN họ khỏi dữ liệu huấn luyện.
+  1. Tập người dùng đủ điều kiện được chia cố định thành 5 phần RỜI NHAU (hạt giống chia 2026). --seed k chọn phần k:
+     phần 1 là tập phát triển (chỉ dùng để chọn tham số), phần 0, 2, 3, 4 là tập kiểm tra. Người dùng của phần được chọn
+     là "người dùng mới" và bị LOẠI HẲN khỏi dữ liệu huấn luyện.
   2. Huấn luyện lại toàn bộ dịch vụ web (RecommenderService.build, như scripts/build_service.py) trên những người
      còn lại, nên mô hình chưa từng thấy bất kỳ lượt chấm nào của người dùng mới.
   3. Mỗi người dùng mới "đăng ký" với n phim thích (n = 1, 2, 3, 5, 7, 10, 15, 20, 30) lấy ngẫu nhiên trong các phim họ chấm
@@ -51,7 +53,7 @@ def ci(x: np.ndarray, rng, b: int = 2000) -> tuple[float, float]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--users", type=int, default=1000)
+    ap.add_argument("--users", type=int, default=0, help="giới hạn số người của phần (0: cả phần)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--rated", action="store_true",
                     help="hồ sơ = n phim đã chấm bất kỳ với số sao thật (gồm cả phim không thích), thay vì n phim thích")
@@ -62,7 +64,7 @@ def main() -> None:
                          "hồ sơ (đúng như web, phim đã xem ngoài hồ sơ vẫn được xếp và tính là không liên quan)")
     ap.add_argument("--no-profile-ranker", action="store_true", help="bỏ qua bộ xếp hạng học hồ sơ ngắn (chạy nhanh)")
     ap.add_argument("--min-liked", type=int, default=0, help="ngưỡng phim thích để chọn người dùng (mặc định max n)")
-    ap.add_argument("--short", type=int, default=1, help="số hồ sơ ngắn mỗi người khi huấn luyện bộ xếp hạng mới")
+    ap.add_argument("--short", type=int, default=3, help="số hồ sơ ngắn mỗi người khi huấn luyện bộ xếp hạng mới")
     ap.add_argument("--pop-weights", type=float, nargs="*", default=[],
                     help="thử thêm công thức trộn với trọng số độ phổ biến khác (mặc định của web: trong best_params)")
     args = ap.parse_args()
@@ -75,7 +77,15 @@ def main() -> None:
     rated_hist = hist.groupby("user")[["item", "rating"]].apply(lambda g: list(zip(g["item"], g["rating"])))
     need = args.min_liked or max(NS)
     pool = [u for u in test_rel.index if len(liked_hist.get(u, [])) >= need]
-    new_users = rng.choice(pool, min(args.users, len(pool)), replace=False)
+    # Chia MỘT LẦN trên tập rộng nhất (người có ít nhất 10 phim thích, chứa cả người dùng nặng) rồi mới lọc theo
+    # --min-liked, để một người luôn thuộc cùng một phần ở mọi loại người dùng: phần phát triển và phần kiểm tra rời
+    # nhau cả khi so chéo giữa người dùng nặng và nhẹ.
+    base = sorted(u for u in test_rel.index if len(liked_hist.get(u, [])) >= 10)
+    fold_of = {u: i for i, part in enumerate(np.array_split(np.random.default_rng(2026).permutation(base), 5))
+               for u in part}
+    pool_set = set(pool)
+    new_users = np.array([u for u in base if fold_of[u] == args.seed % 5 and u in pool_set])[: args.users or None]
+    print(f"Phần {args.seed % 5}: {len(new_users)} người dùng mới (trong {len(pool)} người đủ điều kiện)")
     keep = lambda df: df[~df["user"].isin(set(new_users))].reset_index(drop=True)  # noqa: E731
     reduced = dataclasses.replace(ds, train=keep(ds.train), val=keep(ds.val), test=keep(ds.test))
     best = json.loads((ROOT / "results" / "best_params.json").read_text(encoding="utf-8"))
@@ -89,6 +99,9 @@ def main() -> None:
         profile_booster, info, _ = fit_profile_ranker(reduced, best["ImplicitALS"], best["ItemKNN"], svc.weights,
                                                        short=args.short)
         print(f"Bộ xếp hạng theo hồ sơ: {info} ({time.perf_counter() - t0:.0f}s)")
+        info_path = ROOT / "results" / f"cold_start_ranker_seed{args.seed}{'_min' + str(args.min_liked) if args.min_liked else ''}" \
+            f"{'_short' + str(args.short) if args.short != 1 else ''}.json"
+        info_path.write_text(json.dumps({**info, "short_profiles_per_user": args.short}, indent=2), encoding="utf-8")
         rankers["Hai tầng (học cả hồ sơ ngắn)"] = {**svc.ranker, "booster": profile_booster}
     top_pop = set(np.argsort(-np.asarray(svc.pop))[:K].tolist())
 
@@ -113,23 +126,23 @@ def main() -> None:
                 ratings = {i: 5 for i in liked}
             als = svc.Y @ svc._fold_in(liked)
             knn_part = svc.sim[liked].toarray()
+            parts = svc._blend_parts(liked, [], als, knn_part)
+            z_pop = parts.pop("pop") / svc.pop_weight(len(liked))  # phần độ phổ biến chưa nhân trọng số
+            rest = sum(parts.values())
             scores = {
                 "Phổ biến nhất": np.asarray(svc.pop, dtype=np.float64).copy(),
                 "Implicit ALS": als.astype(np.float64),
-                "Công thức trộn": svc._blend_score(liked, [], als, knn_part).astype(np.float64),
+                # trọng số cố định của mô hình lai trong thực nghiệm chính (w_pop = 0,25)
+                "Công thức trộn": (rest + svc.weights[3] * z_pop).astype(np.float64),
             }
             for name, rk in rankers.items():
                 svc.ranker = rk
                 scores[name] = svc._rank_two_stage(ratings, liked, als)[0].astype(np.float64)
-            for w in args.pop_weights:  # biến thể: đổi trọng số độ phổ biến của công thức trộn
-                parts = svc._blend_parts(liked, [], als, knn_part)
-                parts["pop"] = parts["pop"] / svc.weights[3] * w
-                scores[f"Trộn, phổ biến {w:g}"] = sum(parts.values()).astype(np.float64)
-            for sched in args.schedules:
+            for w in args.pop_weights:  # biến thể: trọng số độ phổ biến cố định khác
+                scores[f"Trộn, phổ biến {w:g}"] = (rest + w * z_pop).astype(np.float64)
+            for sched in args.schedules:  # trọng số giảm theo số phim thích: w(n) = c * n^-p
                 c, pw = map(float, sched.split(","))
-                parts = svc._blend_parts(liked, [], als, knn_part)
-                parts["pop"] = parts["pop"] / svc.weights[3] * c * len(liked) ** -pw
-                scores[f"Trộn, w(n)={c:g}·n^-{pw:g}"] = sum(parts.values()).astype(np.float64)
+                scores[f"Trộn, w(n)={c:g}·n^-{pw:g}"] = (rest + c * len(liked) ** -pw * z_pop).astype(np.float64)
             for name, s in scores.items():
                 s[seen if args.exclude == "history" or n == FULL else list(ratings)] = -np.inf
                 top = np.argpartition(-s, K)[:K]
