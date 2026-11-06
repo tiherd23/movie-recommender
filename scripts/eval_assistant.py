@@ -42,18 +42,28 @@ def f1(pred: set, gold: set) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", nargs="+", default=["qwen3:4b", "qwen2.5:3b"])
+    ap.add_argument("--models", nargs="*", default=["qwen3:4b", "qwen2.5:3b"])
+    ap.add_argument("--data", nargs="+", default=["assistant_intents.csv"],
+                    help="các tệp câu có nhãn trong data/eval (bộ mới: assistant_intents_moi.csv assistant_intents_moi2.csv)")
+    ap.add_argument("--tag", default="", help="hậu tố tên tệp kết quả, ví dụ _moi")
+    ap.add_argument("--rules", action="store_true", help="chấm thêm bộ hiểu câu bằng luật (không cần Ollama)")
     args = ap.parse_args()
-    data = pd.read_csv(ROOT / "data" / "eval" / "assistant_intents.csv", keep_default_na=False)
+    data = pd.concat([pd.read_csv(ROOT / "data" / "eval" / f, keep_default_na=False) for f in args.data],
+                     ignore_index=True)
     rows, details = [], []
-    for model in args.models:
-        client = OllamaClient(model)
-        if not client.available():
-            print(f"[bỏ qua] {model}: Ollama chưa chạy hoặc chưa tải mô hình (ollama pull {model})")
-            continue
-        bot = Assistant(_Stub(), None, client)
-        client([{"role": "user", "content": "xin chào"}])  # nạp mô hình vào bộ nhớ trước khi bấm giờ
-        print(f"== {model} | chạy trên: {'CPU' if client.num_gpu == 0 else 'GPU/tự chọn'} ==")
+    for model in (["luat"] if args.rules else []) + args.models:
+        if model == "luat":  # bộ hiểu câu bằng luật, dùng khi không có LLM
+            client = None
+            bot = Assistant(_Stub(), None, None)
+            print("== bộ hiểu câu bằng luật ==")
+        else:
+            client = OllamaClient(model)
+            if not client.available():
+                print(f"[bỏ qua] {model}: Ollama chưa chạy hoặc chưa tải mô hình (ollama pull {model})")
+                continue
+            bot = Assistant(_Stub(), None, client)
+            client([{"role": "user", "content": "xin chào"}])  # nạp mô hình vào bộ nhớ trước khi bấm giờ
+            print(f"== {model} | chạy trên: {'CPU' if client.num_gpu == 0 else 'GPU/tự chọn'} ==")
         stats = {"action": [], "genre": [], "exclude": [], "year": [], "title": [], "time": []}
         for _, r in data.iterrows():
             t0 = time.perf_counter()
@@ -72,8 +82,11 @@ def main() -> None:
             print(f"  [{mark}] {r['message'][:50]:50s} -> {got['action']:9s} {got['genres']} "
                   f"{got['year_from'] or ''}-{got['year_to'] or ''} {got['similar_to']}")
         mean = lambda v: sum(v) / max(len(v), 1)
-        device = "CPU (GPU lỗi hoặc bị tắt)" if client.num_gpu == 0 else "GPU/tự chọn"
-        print(f"  -> kết thúc trên: {device} | num_ctx {client.num_ctx}")
+        if client is None:
+            device = "luật"
+        else:
+            device = "CPU (GPU lỗi hoặc bị tắt)" if client.num_gpu == 0 else "GPU/tự chọn"
+            print(f"  -> kết thúc trên: {device} | num_ctx {client.num_ctx}")
         rows.append({"model": model, "n": len(data), "action_acc": mean(stats["action"]), "genre_f1": mean(stats["genre"]),
                      "exclude_acc": mean(stats["exclude"]), "year_acc": mean(stats["year"]),
                      "title_acc": mean(stats["title"]), "latency_s": mean(stats["time"]), "device": device})
@@ -81,10 +94,10 @@ def main() -> None:
         return
     out = pd.DataFrame(rows).round(3)
     (ROOT / "results").mkdir(exist_ok=True)
-    out.to_csv(ROOT / "results" / "assistant_eval.csv", index=False)
-    pd.DataFrame(details).to_csv(ROOT / "results" / "assistant_eval_details.csv", index=False)
+    out.to_csv(ROOT / "results" / f"assistant_eval{args.tag}.csv", index=False)
+    pd.DataFrame(details).to_csv(ROOT / "results" / f"assistant_eval_details{args.tag}.csv", index=False)
     print("\n" + out.to_string(index=False))
-    print("\nĐã ghi results/assistant_eval.csv và results/assistant_eval_details.csv")
+    print(f"\nĐã ghi results/assistant_eval{args.tag}.csv và results/assistant_eval_details{args.tag}.csv")
 
 
 if __name__ == "__main__":

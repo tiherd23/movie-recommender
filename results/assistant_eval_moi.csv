@@ -1,0 +1,3 @@
+model,n,action_acc,genre_f1,exclude_acc,year_acc,title_acc,latency_s,device
+luat,38,0.763,0.982,0.974,1.0,0.857,0.0,luật
+qwen3:4b,38,0.868,0.904,1.0,0.895,1.0,8.262,CPU (GPU lỗi hoặc bị tắt)

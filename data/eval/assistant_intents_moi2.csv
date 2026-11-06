@@ -1,0 +1,27 @@
+message,action,genres,exclude_genres,year_from,year_to,similar_to
+hello bạn ơi,chat,,,0,0,
+cảm ơn nha gợi ý hay lắm,chat,,,0,0,
+bạn giúp được gì cho mình,chat,,,0,0,
+mình đang buồn muốn xem phim hài cho vui,recommend,Comedy,,0,0,
+có phim phiêu lưu nào cho cả nhà xem không,recommend,Adventure|Children's,,0,0,
+gợi ý phim trinh thám nhưng không kinh dị,recommend,Mystery,Horror,0,0,
+phim viễn tưởng từ năm 1990 trở đi,recommend,Sci-Fi,,1990,0,
+cho mình vài phim cao bồi cũ trước 1970,recommend,Western,,0,1970,
+phim lãng mạn thập niên 50,recommend,Romance,,1950,1959,
+muốn xem phim hành động giật gân,recommend,Action|Thriller,,0,0,
+có phim nhạc kịch nào không,recommend,Musical,,0,0,
+cuối tuần này nên xem phim gì,recommend,,,0,0,
+còn phim nào giống Forrest Gump không,similar,,,0,0,Forrest Gump
+tìm cho mình phim tương tự Pulp Fiction,similar,,,0,0,Pulp Fiction
+mình mê Star Wars quá có phim nào kiểu vậy không,similar,,,0,0,Star Wars
+phim giống The Lion King,similar,,,0,0,Lion King
+có gì giống Home Alone không,similar,,,0,0,Home Alone
+phim về một con lợn muốn trở thành chó chăn cừu,describe,,,0,0,
+anh chàng bị nhốt trong một chương trình truyền hình mà không biết,describe,,,0,0,
+phim về võ sĩ quyền anh nghèo được trao cơ hội đấu với nhà vô địch,describe,,,0,0,
+cảnh sát phải giữ xe buýt chạy trên 50 dặm một giờ nếu không bom sẽ nổ,describe,,,0,0,
+phim hoạt hình về những món đồ chơi có sự sống,describe,Animation,,0,0,
+phim kinh dị về con cá mập ăn thịt người ở bãi biển,describe,Horror,,0,0,
+cô bé bị lốc xoáy cuốn tới một xứ sở thần tiên,describe,,,0,0,
+người đàn ông kể chuyện đời mình khi ngồi chờ xe buýt,describe,,,0,0,
+phim chiến tranh về những người lính đi tìm một binh nhì,describe,War,,0,0,

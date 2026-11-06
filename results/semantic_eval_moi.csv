@@ -1,0 +1,167 @@
+set,config,query,target,pop_rank,rank
+dev,chỉ nội dung,phi hành gia gặp sự cố trên đường bay tới mặt trăng,Apollo 13 (1995),86,2
+dev,nội dung + độ phổ biến,phi hành gia gặp sự cố trên đường bay tới mặt trăng,Apollo 13 (1995),86,1
+dev,chỉ nội dung,chuyện tình trên con tàu chở khách bị đắm vì đâm phải băng trôi,Titanic (1997),115,1
+dev,nội dung + độ phổ biến,chuyện tình trên con tàu chở khách bị đắm vì đâm phải băng trôi,Titanic (1997),115,1
+dev,chỉ nội dung,hai thám tử truy tìm kẻ giết người theo bảy tội lỗi,Seven (Se7en) (1995),112,1
+dev,nội dung + độ phổ biến,hai thám tử truy tìm kẻ giết người theo bảy tội lỗi,Seven (Se7en) (1995),112,1
+dev,chỉ nội dung,người máy sát thủ từ tương lai được gửi về để giết một phụ nữ,"Terminator, The (1984)",23,1
+dev,nội dung + độ phổ biến,người máy sát thủ từ tương lai được gửi về để giết một phụ nữ,"Terminator, The (1984)",23,1
+dev,chỉ nội dung,những món đồ chơi sống dậy khi cậu chủ vắng nhà,Toy Story (1995),26,10
+dev,nội dung + độ phổ biến,những món đồ chơi sống dậy khi cậu chủ vắng nhà,Toy Story (1995),26,1
+dev,chỉ nội dung,nhóm lính Mỹ đi tìm một binh nhì sau cuộc đổ bộ Normandy,Saving Private Ryan (1998),4,1
+dev,nội dung + độ phổ biến,nhóm lính Mỹ đi tìm một binh nhì sau cuộc đổ bộ Normandy,Saving Private Ryan (1998),4,1
+dev,chỉ nội dung,công viên giải trí có khủng long được nhân bản,Jurassic Park (1993),22,2
+dev,nội dung + độ phổ biến,công viên giải trí có khủng long được nhân bản,Jurassic Park (1993),22,1
+dev,chỉ nội dung,hacker phát hiện thế giới mình sống là mô phỏng máy tính,"Matrix, The (1999)",7,4
+dev,nội dung + độ phổ biến,hacker phát hiện thế giới mình sống là mô phỏng máy tính,"Matrix, The (1999)",7,1
+dev,chỉ nội dung,nữ đặc vụ FBI nhờ một bác sĩ ăn thịt người giúp bắt sát nhân,"Silence of the Lambs, The (1991)",6,12
+dev,nội dung + độ phổ biến,nữ đặc vụ FBI nhờ một bác sĩ ăn thịt người giúp bắt sát nhân,"Silence of the Lambs, The (1991)",6,1
+dev,chỉ nội dung,sư tử con trở về giành lại vương quốc từ người chú,"Lion King, The (1994)",151,1
+dev,nội dung + độ phổ biến,sư tử con trở về giành lại vương quốc từ người chú,"Lion King, The (1994)",151,1
+dev,chỉ nội dung,người đàn ông chậm phát triển vô tình có mặt ở nhiều sự kiện lịch sử nước Mỹ,Forrest Gump (1994),24,2
+dev,nội dung + độ phổ biến,người đàn ông chậm phát triển vô tình có mặt ở nhiều sự kiện lịch sử nước Mỹ,Forrest Gump (1994),24,1
+dev,chỉ nội dung,nhân viên ngân hàng bị kết án oan lên kế hoạch vượt ngục,"Shawshank Redemption, The (1994)",12,5
+dev,nội dung + độ phổ biến,nhân viên ngân hàng bị kết án oan lên kế hoạch vượt ngục,"Shawshank Redemption, The (1994)",12,1
+dev,chỉ nội dung,cá mập trắng khổng lồ tấn công bãi biển du lịch,Jaws (1975),49,5
+dev,nội dung + độ phổ biến,cá mập trắng khổng lồ tấn công bãi biển du lịch,Jaws (1975),49,1
+dev,chỉ nội dung,cậu bé kết bạn với người ngoài hành tinh bị bỏ lại trái đất,E.T. the Extra-Terrestrial (1982),28,1
+dev,nội dung + độ phổ biến,cậu bé kết bạn với người ngoài hành tinh bị bỏ lại trái đất,E.T. the Extra-Terrestrial (1982),28,1
+dev,chỉ nội dung,cậu bé bị gia đình bỏ quên ở nhà dịp Giáng sinh và chống trộm,Home Alone (1990),653,1
+dev,nội dung + độ phổ biến,cậu bé bị gia đình bỏ quên ở nhà dịp Giáng sinh và chống trộm,Home Alone (1990),653,1
+dev,chỉ nội dung,cậu bé nhìn thấy người chết và bác sĩ tâm lý giúp cậu,"Sixth Sense, The (1999)",8,1
+dev,nội dung + độ phổ biến,cậu bé nhìn thấy người chết và bác sĩ tâm lý giúp cậu,"Sixth Sense, The (1999)",8,1
+dev,chỉ nội dung,anh hùng Scotland lãnh đạo cuộc nổi dậy chống vua Anh,Braveheart (1995),15,1
+dev,nội dung + độ phổ biến,anh hùng Scotland lãnh đạo cuộc nổi dậy chống vua Anh,Braveheart (1995),15,1
+dev,chỉ nội dung,người dẫn chương trình thời tiết bị kẹt lặp lại cùng một ngày,Groundhog Day (1993),25,1
+dev,nội dung + độ phổ biến,người dẫn chương trình thời tiết bị kẹt lặp lại cùng một ngày,Groundhog Day (1993),25,1
+dev,chỉ nội dung,người đàn ông không biết cả cuộc đời mình là một chương trình truyền hình,"Truman Show, The (1998)",184,1
+dev,nội dung + độ phổ biến,người đàn ông không biết cả cuộc đời mình là một chương trình truyền hình,"Truman Show, The (1998)",184,1
+dev,chỉ nội dung,doanh nhân Đức cứu người Do Thái khỏi trại tập trung,Schindler's List (1993),11,1
+dev,nội dung + độ phổ biến,doanh nhân Đức cứu người Do Thái khỏi trại tập trung,Schindler's List (1993),11,1
+test,chỉ nội dung,thiếu niên du hành về quá khứ bằng xe hơi và gặp bố mẹ thời trẻ,Back to the Future (1985),17,1
+test,nội dung + độ phổ biến,thiếu niên du hành về quá khứ bằng xe hơi và gặp bố mẹ thời trẻ,Back to the Future (1985),17,1
+test,chỉ nội dung,phi hành đoàn tàu vũ trụ bị sinh vật ngoài hành tinh săn đuổi,Alien (1979),29,16
+test,nội dung + độ phổ biến,phi hành đoàn tàu vũ trụ bị sinh vật ngoài hành tinh săn đuổi,Alien (1979),29,3
+test,chỉ nội dung,hồn ma người chồng bảo vệ vợ nhờ một bà đồng,Ghost (1990),230,128
+test,nội dung + độ phổ biến,hồn ma người chồng bảo vệ vợ nhờ một bà đồng,Ghost (1990),230,21
+test,chỉ nội dung,xe buýt gài bom sẽ nổ nếu chạy chậm lại,Speed (1994),99,1
+test,nội dung + độ phổ biến,xe buýt gài bom sẽ nổ nếu chạy chậm lại,Speed (1994),99,1
+test,chỉ nội dung,chú heo con muốn trở thành chó chăn cừu,Babe (1995),52,6
+test,nội dung + độ phổ biến,chú heo con muốn trở thành chó chăn cừu,Babe (1995),52,1
+test,chỉ nội dung,đấu sĩ La Mã trả thù hoàng đế đã giết gia đình mình,Gladiator (2000),34,2
+test,nội dung + độ phổ biến,đấu sĩ La Mã trả thù hoàng đế đã giết gia đình mình,Gladiator (2000),34,1
+test,chỉ nội dung,đặc vụ bí mật mặc đồ đen quản lý người ngoài hành tinh trên trái đất,Men in Black (1997),27,1
+test,nội dung + độ phổ biến,đặc vụ bí mật mặc đồ đen quản lý người ngoài hành tinh trên trái đất,Men in Black (1997),27,1
+test,chỉ nội dung,người ngoài hành tinh xâm lược trái đất vào ngày quốc khánh Mỹ,Independence Day (ID4) (1996),94,1
+test,nội dung + độ phổ biến,người ngoài hành tinh xâm lược trái đất vào ngày quốc khánh Mỹ,Independence Day (ID4) (1996),94,1
+test,chỉ nội dung,hai tay giết thuê và những câu chuyện tội phạm đan xen ở Los Angeles,Pulp Fiction (1994),20,7
+test,nội dung + độ phổ biến,hai tay giết thuê và những câu chuyện tội phạm đan xen ở Los Angeles,Pulp Fiction (1994),20,1
+test,chỉ nội dung,nhà khảo cổ săn tìm hòm giao ước trước phát xít Đức,Raiders of the Lost Ark (1981),4,2
+test,nội dung + độ phổ biến,nhà khảo cổ săn tìm hòm giao ước trước phát xít Đức,Raiders of the Lost Ark (1981),4,1
+test,chỉ nội dung,chàng trai nông dân gia nhập quân nổi dậy chống đế chế thiên hà,Star Wars: Episode IV - A New Hope (1977),2,127
+test,nội dung + độ phổ biến,chàng trai nông dân gia nhập quân nổi dậy chống đế chế thiên hà,Star Wars: Episode IV - A New Hope (1977),2,12
+test,chỉ nội dung,cô gái bị lốc xoáy cuốn tới xứ sở thần tiên và tìm đường về nhà,"Wizard of Oz, The (1939)",40,23
+test,nội dung + độ phổ biến,cô gái bị lốc xoáy cuốn tới xứ sở thần tiên và tìm đường về nhà,"Wizard of Oz, The (1939)",40,2
+test,chỉ nội dung,gia đình mafia Ý ở New York và người con trai kế nghiệp,"Godfather, The (1972)",14,1
+test,nội dung + độ phổ biến,gia đình mafia Ý ở New York và người con trai kế nghiệp,"Godfather, The (1972)",14,1
+test,chỉ nội dung,cô bé bị quỷ ám và hai linh mục trừ tà,"Exorcist, The (1973)",207,1
+test,nội dung + độ phổ biến,cô bé bị quỷ ám và hai linh mục trừ tà,"Exorcist, The (1973)",207,1
+test,chỉ nội dung,người đàn ông mất ngủ lập câu lạc bộ đánh nhau bí mật,Fight Club (1999),66,1
+test,nội dung + độ phổ biến,người đàn ông mất ngủ lập câu lạc bộ đánh nhau bí mật,Fight Club (1999),66,1
+test,chỉ nội dung,võ sĩ quyền anh vô danh có cơ hội đấu với nhà vô địch,Rocky (1976),142,3
+test,nội dung + độ phổ biến,võ sĩ quyền anh vô danh có cơ hội đấu với nhà vô địch,Rocky (1976),142,1
+test,chỉ nội dung,nhà văn bị một người hâm mộ cuồng tín giam giữ,Misery (1990),231,1
+test,nội dung + độ phổ biến,nhà văn bị một người hâm mộ cuồng tín giam giữ,Misery (1990),231,1
+test,chỉ nội dung,ông bố giả làm bà quản gia để được gần các con,Mrs. Doubtfire (1993),408,1
+test,nội dung + độ phổ biến,ông bố giả làm bà quản gia để được gần các con,Mrs. Doubtfire (1993),408,1
+test,chỉ nội dung,cảnh sát New York một mình chống khủng bố trong tòa nhà chọc trời,Die Hard (1988),43,2
+test,nội dung + độ phổ biến,cảnh sát New York một mình chống khủng bố trong tòa nhà chọc trời,Die Hard (1988),43,1
+test,chỉ nội dung,giáo viên dạy văn khuyến khích học sinh trường nội trú sống hết mình,Dead Poets Society (1989),209,6
+test,nội dung + độ phổ biến,giáo viên dạy văn khuyến khích học sinh trường nội trú sống hết mình,Dead Poets Society (1989),209,2
+test2,chỉ nội dung,cảnh sát trưởng đang mang thai điều tra vụ bắt cóc rồi giết người giữa vùng tuyết trắng,Fargo (1996),10,62
+test2,nội dung + độ phổ biến,cảnh sát trưởng đang mang thai điều tra vụ bắt cóc rồi giết người giữa vùng tuyết trắng,Fargo (1996),10,3
+test2,chỉ nội dung,chủ quán bar ở Bắc Phi gặp lại người yêu cũ giữa thời chiến tranh thế giới,Casablanca (1942),37,3
+test2,nội dung + độ phổ biến,chủ quán bar ở Bắc Phi gặp lại người yêu cũ giữa thời chiến tranh thế giới,Casablanca (1942),37,1
+test2,chỉ nội dung,cô thư ký ôm tiền bỏ trốn rồi dừng chân ở một nhà nghỉ vắng do một thanh niên kỳ lạ quản lý,Psycho (1960),76,2
+test2,nội dung + độ phổ biến,cô thư ký ôm tiền bỏ trốn rồi dừng chân ở một nhà nghỉ vắng do một thanh niên kỳ lạ quản lý,Psycho (1960),76,1
+test2,chỉ nội dung,kẻ duy nhất sống sót kể lại cho cảnh sát về một tên trùm tội phạm bí ẩn,"Usual Suspects, The (1995)",31,19
+test2,nội dung + độ phổ biến,kẻ duy nhất sống sót kể lại cho cảnh sát về một tên trùm tội phạm bí ẩn,"Usual Suspects, The (1995)",31,1
+test2,chỉ nội dung,người đàn ông trung niên chán đời bỏ việc và mê mẩn bạn của con gái mình,American Beauty (1999),1,2
+test2,nội dung + độ phổ biến,người đàn ông trung niên chán đời bỏ việc và mê mẩn bạn của con gái mình,American Beauty (1999),1,1
+test2,chỉ nội dung,cậu lao công trường đại học là thiên tài toán học được một nhà tâm lý giúp đỡ,Good Will Hunting (1997),50,5
+test2,nội dung + độ phổ biến,cậu lao công trường đại học là thiên tài toán học được một nhà tâm lý giúp đỡ,Good Will Hunting (1997),50,1
+test2,chỉ nội dung,chàng trai nghèo nhặt được cây đèn thần có vị thần biết ban điều ước,Aladdin (1992),109,108
+test2,nội dung + độ phổ biến,chàng trai nghèo nhặt được cây đèn thần có vị thần biết ban điều ước,Aladdin (1992),109,18
+test2,chỉ nội dung,cô gái mê đọc sách bị giam trong lâu đài của một hoàng tử bị nguyền rủa thành quái thú,Beauty and the Beast (1991),164,10
+test2,nội dung + độ phổ biến,cô gái mê đọc sách bị giam trong lâu đài của một hoàng tử bị nguyền rủa thành quái thú,Beauty and the Beast (1991),164,3
+test2,chỉ nội dung,ba nhà khoa học mở dịch vụ bắt ma ở New York,Ghostbusters (1984),32,1
+test2,nội dung + độ phổ biến,ba nhà khoa học mở dịch vụ bắt ma ở New York,Ghostbusters (1984),32,1
+test2,chỉ nội dung,phi công hải quân trẻ tuổi tham gia trường huấn luyện phi công chiến đấu ưu tú nhất,Top Gun (1986),221,1
+test2,nội dung + độ phổ biến,phi công hải quân trẻ tuổi tham gia trường huấn luyện phi công chiến đấu ưu tú nhất,Top Gun (1986),221,1
+test2,chỉ nội dung,người em ích kỷ đưa người anh mắc chứng tự kỷ đi khắp nước Mỹ để giành tài sản thừa kế,Rain Man (1988),76,1
+test2,nội dung + độ phổ biến,người em ích kỷ đưa người anh mắc chứng tự kỷ đi khắp nước Mỹ để giành tài sản thừa kế,Rain Man (1988),76,1
+test2,chỉ nội dung,cậu bé ước mình lớn lên và sáng hôm sau tỉnh dậy trong cơ thể người đàn ông ba mươi tuổi,Big (1988),72,1
+test2,nội dung + độ phổ biến,cậu bé ước mình lớn lên và sáng hôm sau tỉnh dậy trong cơ thể người đàn ông ba mươi tuổi,Big (1988),72,1
+test2,chỉ nội dung,trò chơi cờ bàn ma thuật thả thú rừng ra ngoài đời thật,Jumanji (1995),604,1
+test2,nội dung + độ phổ biến,trò chơi cờ bàn ma thuật thả thú rừng ra ngoài đời thật,Jumanji (1995),604,1
+test2,chỉ nội dung,nhóm nhà khoa học đuổi theo những cơn lốc xoáy để đặt thiết bị đo,Twister (1996),351,2
+test2,nội dung + độ phổ biến,nhóm nhà khoa học đuổi theo những cơn lốc xoáy để đặt thiết bị đo,Twister (1996),351,1
+test2,chỉ nội dung,bác sĩ bị kết tội oan giết vợ trốn thoát và truy tìm kẻ có một cánh tay,"Fugitive, The (1993)",30,1
+test2,nội dung + độ phổ biến,bác sĩ bị kết tội oan giết vợ trốn thoát và truy tìm kẻ có một cánh tay,"Fugitive, The (1993)",30,1
+test2,chỉ nội dung,đại úy được cử đi ngược dòng sông vào rừng Campuchia để ám sát một đại tá nổi loạn,Apocalypse Now (1979),96,1
+test2,nội dung + độ phổ biến,đại úy được cử đi ngược dòng sông vào rừng Campuchia để ám sát một đại tá nổi loạn,Apocalypse Now (1979),96,1
+test2,chỉ nội dung,tân binh đến Việt Nam bị kẹt giữa hai trung sĩ đối nghịch trong cùng một trung đội,Platoon (1986),107,1
+test2,nội dung + độ phổ biến,tân binh đến Việt Nam bị kẹt giữa hai trung sĩ đối nghịch trong cùng một trung đội,Platoon (1986),107,1
+test2,chỉ nội dung,bảo mẫu biết phép thuật bay xuống bằng chiếc ô để chăm sóc hai đứa trẻ ở London,Mary Poppins (1964),178,4
+test2,nội dung + độ phổ biến,bảo mẫu biết phép thuật bay xuống bằng chiếc ô để chăm sóc hai đứa trẻ ở London,Mary Poppins (1964),178,1
+test2,chỉ nội dung,nữ tu tập sự làm gia sư cho bảy đứa trẻ nhà một đại tá ở Áo,"Sound of Music, The (1965)",229,1
+test2,nội dung + độ phổ biến,nữ tu tập sự làm gia sư cho bảy đứa trẻ nhà một đại tá ở Áo,"Sound of Music, The (1965)",229,1
+test2,chỉ nội dung,cậu học sinh giả bệnh trốn học một ngày để dạo chơi Chicago cùng bạn bè,Ferris Bueller's Day Off (1986),58,1
+test2,nội dung + độ phổ biến,cậu học sinh giả bệnh trốn học một ngày để dạo chơi Chicago cùng bạn bè,Ferris Bueller's Day Off (1986),58,1
+test2,chỉ nội dung,năm học sinh khác nhau bị phạt ở lại trường cả ngày thứ bảy,"Breakfast Club, The (1985)",68,1
+test2,nội dung + độ phổ biến,năm học sinh khác nhau bị phạt ở lại trường cả ngày thứ bảy,"Breakfast Club, The (1985)",68,1
+test2,chỉ nội dung,chàng trai được tạo ra với đôi bàn tay là những lưỡi kéo sống ở vùng ngoại ô,Edward Scissorhands (1990),124,3
+test2,nội dung + độ phổ biến,chàng trai được tạo ra với đôi bàn tay là những lưỡi kéo sống ở vùng ngoại ô,Edward Scissorhands (1990),124,1
+test2,chỉ nội dung,những tấm vé vàng đưa trẻ em vào tham quan nhà máy sô cô la bí ẩn,Willy Wonka and the Chocolate Factory (1971),115,1
+test2,nội dung + độ phổ biến,những tấm vé vàng đưa trẻ em vào tham quan nhà máy sô cô la bí ẩn,Willy Wonka and the Chocolate Factory (1971),115,1
+test2,chỉ nội dung,ông nội đọc cho cháu nghe câu chuyện về chàng nông dân giải cứu công chúa khỏi hoàng tử độc ác,"Princess Bride, The (1987)",16,263
+test2,nội dung + độ phổ biến,ông nội đọc cho cháu nghe câu chuyện về chàng nông dân giải cứu công chúa khỏi hoàng tử độc ác,"Princess Bride, The (1987)",16,18
+test2,chỉ nội dung,nhân viên văn phòng tìm thấy cánh cửa nhỏ dẫn vào đầu óc của một diễn viên nổi tiếng,Being John Malkovich (1999),21,1
+test2,nội dung + độ phổ biến,nhân viên văn phòng tìm thấy cánh cửa nhỏ dẫn vào đầu óc của một diễn viên nổi tiếng,Being John Malkovich (1999),21,1
+test2,chỉ nội dung,đội thợ khoan dầu được đưa lên vũ trụ để phá hủy thiên thạch sắp va vào trái đất,Armageddon (1998),317,2
+test2,nội dung + độ phổ biến,đội thợ khoan dầu được đưa lên vũ trụ để phá hủy thiên thạch sắp va vào trái đất,Armageddon (1998),317,1
+test2,chỉ nội dung,tù nhân được gửi ngược thời gian để tìm nguồn gốc virus đã xóa sổ phần lớn nhân loại,Twelve Monkeys (1995),67,1
+test2,nội dung + độ phổ biến,tù nhân được gửi ngược thời gian để tìm nguồn gốc virus đã xóa sổ phần lớn nhân loại,Twelve Monkeys (1995),67,1
+test2,chỉ nội dung,cảnh sát bị giết rồi được hồi sinh thành người máy thực thi pháp luật,Robocop (1987),208,32
+test2,nội dung + độ phổ biến,cảnh sát bị giết rồi được hồi sinh thành người máy thực thi pháp luật,Robocop (1987),208,11
+test2,chỉ nội dung,ba sinh viên vào rừng quay phim tài liệu về một phù thủy và mất tích,"Blair Witch Project, The (1999)",297,1
+test2,nội dung + độ phổ biến,ba sinh viên vào rừng quay phim tài liệu về một phù thủy và mất tích,"Blair Witch Project, The (1999)",297,1
+test2,chỉ nội dung,bốn cậu bé đi bộ dọc đường ray để tìm xác một đứa trẻ mất tích,Stand by Me (1986),39,1
+test2,nội dung + độ phổ biến,bốn cậu bé đi bộ dọc đường ray để tìm xác một đứa trẻ mất tích,Stand by Me (1986),39,1
+test2,chỉ nội dung,sĩ quan miền Bắc ở một đồn biên giới kết thân với bộ tộc người da đỏ,Dances with Wolves (1990),80,3
+test2,nội dung + độ phổ biến,sĩ quan miền Bắc ở một đồn biên giới kết thân với bộ tộc người da đỏ,Dances with Wolves (1990),80,1
+test2,chỉ nội dung,đàn gà mái lên kế hoạch vượt rào trốn khỏi trang trại trước khi bị làm thành bánh,Chicken Run (2000),97,1
+test2,nội dung + độ phổ biến,đàn gà mái lên kế hoạch vượt rào trốn khỏi trang trại trước khi bị làm thành bánh,Chicken Run (2000),97,1
+test2,chỉ nội dung,cô gái phải chạy khắp Berlin trong hai mươi phút kiếm đủ tiền cứu bạn trai,Run Lola Run (Lola rennt) (1998),111,1
+test2,nội dung + độ phổ biến,cô gái phải chạy khắp Berlin trong hai mươi phút kiếm đủ tiền cứu bạn trai,Run Lola Run (Lola rennt) (1998),111,1
+test2,chỉ nội dung,người cha Do Thái biến trại tập trung thành trò chơi để bảo vệ con trai,Life Is Beautiful (La Vita è bella) (1997),90,426
+test2,nội dung + độ phổ biến,người cha Do Thái biến trại tập trung thành trò chơi để bảo vệ con trai,Life Is Beautiful (La Vita è bella) (1997),90,69
+test2,chỉ nội dung,đạo diễn nổi tiếng nhớ lại tuổi thơ ở rạp chiếu bóng làng quê Sicily,Cinema Paradiso (1988),292,1
+test2,nội dung + độ phổ biến,đạo diễn nổi tiếng nhớ lại tuổi thơ ở rạp chiếu bóng làng quê Sicily,Cinema Paradiso (1988),292,1
+test2,chỉ nội dung,chàng trai mang gen không hoàn hảo giả danh người khác để được bay vào vũ trụ,Gattaca (1997),194,1
+test2,nội dung + độ phổ biến,chàng trai mang gen không hoàn hảo giả danh người khác để được bay vào vũ trụ,Gattaca (1997),194,1
+test2,chỉ nội dung,diễn viên của một phim truyền hình khoa học viễn tưởng bị người ngoài hành tinh tưởng là anh hùng thật,Galaxy Quest (1999),61,1
+test2,nội dung + độ phổ biến,diễn viên của một phim truyền hình khoa học viễn tưởng bị người ngoài hành tinh tưởng là anh hùng thật,Galaxy Quest (1999),61,1
+test2,chỉ nội dung,thầy giáo tìm cách ngăn một nữ sinh tham vọng thắng cuộc bầu cử hội học sinh,Election (1999),63,1
+test2,nội dung + độ phổ biến,thầy giáo tìm cách ngăn một nữ sinh tham vọng thắng cuộc bầu cử hội học sinh,Election (1999),63,1
+test2,chỉ nội dung,cậu bé kết bạn với người máy khổng lồ từ ngoài không gian rơi xuống thị trấn,"Iron Giant, The (1999)",294,1
+test2,nội dung + độ phổ biến,cậu bé kết bạn với người máy khổng lồ từ ngoài không gian rơi xuống thị trấn,"Iron Giant, The (1999)",294,1
+test2,chỉ nội dung,hai ông lão ở một làng Ireland tìm cách lĩnh giải xổ số của người hàng xóm vừa qua đời,Waking Ned Devine (1998),318,1
+test2,nội dung + độ phổ biến,hai ông lão ở một làng Ireland tìm cách lĩnh giải xổ số của người hàng xóm vừa qua đời,Waking Ned Devine (1998),318,1
+test2,chỉ nội dung,con trai thợ mỏ than tự chế tạo tên lửa sau khi thấy vệ tinh Sputnik bay qua bầu trời,October Sky (1999),339,1
+test2,nội dung + độ phổ biến,con trai thợ mỏ than tự chế tạo tên lửa sau khi thấy vệ tinh Sputnik bay qua bầu trời,October Sky (1999),339,1
+test2,chỉ nội dung,ông lão lái máy cắt cỏ đi hàng trăm dặm để thăm người anh trai bị đột quỵ,"Straight Story, The (1999)",516,1
+test2,nội dung + độ phổ biến,ông lão lái máy cắt cỏ đi hàng trăm dặm để thăm người anh trai bị đột quỵ,"Straight Story, The (1999)",516,1
+test2,chỉ nội dung,người đàn ông tỉnh dậy không nhớ gì trong thành phố luôn chìm trong đêm tối bị những kẻ lạ thao túng,Dark City (1998),252,1
+test2,nội dung + độ phổ biến,người đàn ông tỉnh dậy không nhớ gì trong thành phố luôn chìm trong đêm tối bị những kẻ lạ thao túng,Dark City (1998),252,1
