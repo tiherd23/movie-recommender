@@ -24,6 +24,7 @@ from .tmdb import IMAGE_BASE
 DEFAULT_ARTIFACT = ROOT / "artifacts" / "service.pkl"
 LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
 MIN_LIKED_FOR_RANKER = 5  # đủ số phim thích mới dùng bộ xếp hạng hai tầng; ít hơn thì dùng công thức trộn
+DISLIKE = 2  # chấm từ số sao này trở xuống là không thích
 GENRE_SHARE = 0.5  # đã chọn thể loại thì ít nhất nửa danh sách (kiến trúc hai tầng) thuộc các thể loại đó
 
 # Tên tiếng Việt của 18 thể loại MovieLens (chỉ để hiển thị; dữ liệu và mô hình vẫn dùng tên gốc)
@@ -34,6 +35,12 @@ GENRE_VI = {
     "Romance": "Lãng mạn", "Sci-Fi": "Khoa học viễn tưởng", "Thriller": "Giật gân", "War": "Chiến tranh",
     "Western": "Miền Tây",
 }
+
+
+def short_title(title: str) -> str:
+    """Tên ngắn để ghi trong dòng lý do: bỏ năm và phụ đề sau " - " ("Star Wars: Episode IV - A New Hope" ->
+    "Star Wars: Episode IV")."""
+    return display_title(title, year=False).split(" - ")[0]
 
 
 def genre_vi(genres: str | list[str], sep: str = ", ") -> str:
@@ -245,6 +252,7 @@ class RecommenderService:
                 score[~self._genre_mask(genres)] = -np.inf
         if ratings:
             score[list(ratings)] = -np.inf  # không gợi ý lại phim đã chấm
+        self._drop_disliked_neighbours(score, ratings, liked, knn_part, k)
 
         top = self._top(score, k, diversity)
         added: set[int] = set()
@@ -256,37 +264,126 @@ class RecommenderService:
             in_cand = [j for j in top if j in pos]
             factors = dict(zip(in_cand, self._explain_two_stage(in_cand, cand_items, cand_X))) if in_cand else {}
             why = [factors.get(j) for j in top]
+        kinds = self._reason_kinds(top, why, method, liked, genres, als_score, knn_part)
+        src = self._source_films(top, liked, knn_part)
         out = []
-        for j, factors in zip(top, why):
+        for j, factors, kind in zip(top, why, kinds):
             row = self.movies.iloc[j]
             match = [g for g in genres if g in row["genres"].split("|")]
+            name = lambda key: " và ".join(short_title(self.movies.iloc[i]["title"]) for i in src[key][j])
             if j in added:  # đưa vào vì thể loại đã chọn
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
-            elif knn_part is not None and knn_part[:, j].max() > 0:
-                src = liked[int(knn_part[:, j].argmax())]
-                reason = f"Vì bạn thích {display_title(self.movies.iloc[src]['title'], year=False)}"
+            elif kind == "als":
+                reason = f"Người thích {name('als')} cũng thích phim này"
+            elif kind == "knn":
+                reason = f"Hay được xem cùng {name('knn')}"
+            elif kind == "content":
+                reason = (f"Hợp thể loại bạn chọn: {genre_vi(match)}" if match and method == "blend"
+                          else f"Nội dung gần với {name('content')}")
+            elif kind == "genre" and match:
+                reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
+            elif kind == "genre" and liked:
+                reason = f"Hợp thể loại bạn hay xem: {self._shared_genres(j, liked)}"
             elif match:
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
             else:
                 reason = self.popular_reason(int(j))
-            extra = {"why": factors} if factors else {}
+            extra = {}
+            if factors:  # phim nguồn của từng yếu tố, để ô "Vì sao?" nói cùng một điều với dòng lý do
+                extra["why"] = factors
+                extra["why_src"] = {g: name(g) for g in ("als", "knn", "content") if liked}
             value = float(score[j]) if np.isfinite(score[j]) else None
-            out.append(self._movie(int(j), score=value, reason=reason, method=method, **extra))
+            out.append(self._movie(int(j), score=value, reason=reason, method=method, reason_kind=kind, **extra))
         return out
 
-    def _blend_score(self, liked: list[int], genres: list[str], als_score, knn_part) -> np.ndarray:
-        """Công thức trộn: ALS + ItemKNN + nội dung (gồm thể loại đã chọn) + độ phổ biến, mỗi phần chuẩn hóa z-score."""
+    def _reason_kinds(self, top, why, method, liked, genres, als_score, knn_part) -> list[str]:
+        """Loại lý do của từng phim, lấy từ thành phần đóng góp nhiều nhất vào điểm:
+        - hai tầng: nhóm đặc trưng có giá trị SHAP dương lớn nhất (đúng với ô "Vì sao?");
+        - công thức trộn: thành phần có điểm z có trọng số lớn nhất.
+        Trả về 'als', 'knn', 'content', 'genre' hoặc 'pop'."""
+        group_kind = {"als": "als", "knn": "knn", "content": "content", "genre": "genre", "item_genre": "genre"}
+        if method == "two_stage":
+            from .ranker import FEATURE_GROUPS
+
+            label_kind = {FEATURE_GROUPS[g]: k for g, k in group_kind.items()}
+            out = []
+            for factors in why:
+                pos = [lab for lab, v in (factors or []) if v > 0]
+                out.append(label_kind.get(pos[0], "pop") if pos else "pop")
+            return out
+        if not liked:
+            return ["content" if genres else "pop"] * len(top)
+        parts = self._blend_parts(liked, genres, als_score, knn_part)
+        names = list(parts)
+        stacked = np.stack([parts[n][top] for n in names])
+        return [names[int(i)] for i in stacked.argmax(axis=0)]
+
+    def _source_films(self, top, liked, knn_part) -> dict[str, dict[int, list[int]]]:
+        """Với mỗi phim gợi ý: phim đã thích đóng góp nhiều nhất vào từng thành phần (thêm phim thứ hai nếu
+        phần đóng góp của nó đạt ít nhất 80% phim đầu, vì khi đó chọn một phim là thiếu công bằng).
+        - als: điểm fold-in là tổng tuyến tính theo phim đã thích, y_j·A⁻¹·(1+alpha)·y_l, nên tách đúng từng phần;
+        - knn: độ tương đồng ItemKNN lớn nhất; content: độ tương đồng nội dung lớn nhất."""
+        if not liked or not top:
+            return {}
+        Yl = self.Y[liked]
+        A = self._gram + self.alpha * (Yl.T @ Yl)
+        als_c = (1.0 + self.alpha) * self.Y[top] @ np.linalg.solve(A, Yl.T)  # (số phim top, số phim thích)
+        knn_c = knn_part[:, top].T
+        cb_c = self.item_vecs[top] @ self.item_vecs[liked].T
+        out = {}
+        for key, c in (("als", als_c), ("knn", knn_c), ("content", cb_c)):
+            order = np.argsort(-c, axis=1)[:, :2]
+            out[key] = {}
+            for j, row, o in zip(top, c, order):
+                pick = [liked[int(o[0])]]
+                if len(o) > 1 and row[o[0]] > 0 and row[o[1]] >= 0.8 * row[o[0]]:
+                    pick.append(liked[int(o[1])])
+                out[key][j] = pick
+        return out
+
+    def _shared_genres(self, j: int, liked: list[int], n: int = 2) -> str:
+        """Tối đa n thể loại của phim j mà người dùng thích nhiều nhất (đếm trên các phim đã thích)."""
+        count: dict[str, int] = {}
+        for i in liked:
+            for g in self.movies.iloc[i]["genres"].split("|"):
+                count[g] = count.get(g, 0) + 1
+        own = [g for g in self.movies.iloc[j]["genres"].split("|") if count.get(g)]
+        return genre_vi(sorted(own, key=lambda g: -count[g])[:n]) or genre_vi(self.movies.iloc[j]["genres"])
+
+    def _drop_disliked_neighbours(self, score: np.ndarray, ratings: dict[int, int], liked: list[int], knn_part,
+                                  k: int) -> None:
+        """Luật hậu xử lý: bỏ phim giống một phim bị chấm thấp (≤ DISLIKE sao) hơn mọi phim đã thích.
+        Lý do: đặc trưng ItemKNN của bộ xếp hạng cộng độ tương đồng với mọi phim đã xem (giống lúc huấn luyện), nên
+        chấm 1★ vẫn đẩy nhẹ các phim giống phim đó lên (scripts/dislike_check.py). Giữ ít nhất k phim để không thiếu."""
+        disliked = [i for i, r in ratings.items() if r <= DISLIKE]
+        if not disliked:
+            return
+        near_bad = np.asarray(self.sim[disliked].max(axis=0).todense()).ravel()
+        near_good = knn_part.max(axis=0) if liked else np.zeros_like(near_bad)
+        drop = (near_bad > near_good) & np.isfinite(score)
+        if np.isfinite(score).sum() - drop.sum() >= k:
+            score[drop] = -np.inf
+
+    def _blend_parts(self, liked: list[int], genres: list[str], als_score, knn_part) -> dict[str, np.ndarray]:
+        """Các thành phần của công thức trộn (đã nhân trọng số), mỗi phần chuẩn hóa z-score:
+        ALS + ItemKNN + nội dung (gồm thể loại đã chọn) + độ phổ biến."""
         w_als, w_knn, w_cb, w_pop = self.weights
-        score = np.zeros(len(self.movies), dtype=np.float32)
+        n = len(self.movies)
+        parts = {}
         if liked:
-            score += w_als * _z(als_score) + w_knn * _z(knn_part.sum(axis=0))
+            parts["als"] = w_als * _z(als_score)
+            parts["knn"] = w_knn * _z(knn_part.sum(axis=0))
         profile = self.item_vecs[liked].sum(axis=0) + len(liked or [0]) * self.content.genre_vector(genres)
-        if np.linalg.norm(profile) > 0:
-            # chưa có phim thích nào: thể loại đã chọn là tín hiệu chính
-            score += (w_cb if liked else 1.0) * _z(self.item_vecs @ profile)
+        # chưa có phim thích nào: thể loại đã chọn là tín hiệu chính
+        parts["content"] = ((w_cb if liked else 1.0) * _z(self.item_vecs @ profile) if np.linalg.norm(profile) > 0
+                            else np.zeros(n, dtype=np.float32))
         # log1p: số lượt thích lệch rất mạnh về vài phim, lấy log để phim nổi tiếng không lấn át
-        score += (w_pop if liked else 1.0) * _z(np.log1p(self.pop))
-        return score
+        parts["pop"] = (w_pop if liked else 1.0) * _z(np.log1p(self.pop))
+        return parts
+
+    def _blend_score(self, liked: list[int], genres: list[str], als_score, knn_part) -> np.ndarray:
+        """Công thức trộn: tổng các thành phần của _blend_parts."""
+        return sum(self._blend_parts(liked, genres, als_score, knn_part).values()).astype(np.float32)
 
     def _genre_mask(self, genres: list[str]) -> np.ndarray:
         chosen = set(genres)

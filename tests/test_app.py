@@ -77,7 +77,7 @@ def test_service_personalizes_for_new_user(service):
     recs = svc.recommend(liked, k=10)
     assert all(r["item"] not in liked for r in recs)  # không gợi ý lại phim đã chấm
     assert np.mean([group(r["item"]) == 1 for r in recs]) >= 0.8  # đúng nhóm sở thích
-    assert recs[0]["reason"].startswith("Vì bạn thích")
+    assert recs[0]["reason"].startswith(("Người thích", "Hay được xem cùng", "Nội dung gần với", "Hợp thể loại"))
     assert len(svc.recommend({}, k=5)) == 5  # người chưa chấm gì vẫn có gợi ý
     cold = svc.recommend({}, ["Drama"], k=5)  # cold-start theo thể loại
     assert all("Drama" in r["genres"] for r in cold)
@@ -115,6 +115,9 @@ def test_web_register_rate_and_recommend(service, tmp_path, monkeypatch):
     assert len(still) == 1 and still[0].value == 4
     assert any(f"Đã lưu 5★" in t.value for t in at.toast)  # có xác nhận đã lưu
     assert f"rec_{first}" not in [f.key for f in at.feedback if f.key.startswith("rec_")]
+    # sau lần chấm: có câu tóm tắt thay đổi của danh sách gợi ý và dòng mô hình đang dùng
+    assert any("Sau lần chấm vừa rồi" in i.value for i in at.info)
+    assert any(e.label.startswith("🧠 Mô hình:") for e in at.expander)
 
     at.session_state["start_page"] = "phim-cua-toi"
     at.run()
@@ -256,3 +259,43 @@ def test_search_matches_words(service):
     first = svc.movies["title"].iloc[11]  # dữ liệu giả: "Movie 12 (...)"
     assert svc.search(first.upper().replace("(", ""))[0]["title"] == first
     assert svc.search("zzzz khong co") == [] and svc.search_all("   ")[1] == 0
+
+
+def test_reason_matches_explanation(service):
+    """Dòng lý do trên thẻ phim lấy từ yếu tố SHAP dương lớn nhất, phim được nêu tên là phim đã thích."""
+    from movierec.ranker import FEATURE_GROUPS
+
+    svc, _ = service
+    liked = {i: 5 for i in range(0, 40, 4)}
+    recs = svc.recommend(liked, k=10)
+    kind_of = {FEATURE_GROUPS[g]: k for g, k in [("als", "als"), ("knn", "knn"), ("content", "content"),
+                                                  ("genre", "genre"), ("item_genre", "genre")]}
+    titles = {svc.movies.iloc[i]["title"].split(" (")[0] for i in liked}
+    for r in recs:
+        pos = [label for label, v in r["why"] if v > 0]
+        assert r["reason_kind"] == (kind_of.get(pos[0], "pop") if pos else "pop")
+        if r["reason_kind"] == "als":
+            assert any(t in r["reason"] for t in titles)
+            assert set(r["why_src"]) == {"als", "knn", "content"}
+
+
+def test_als_attribution_adds_up(service):
+    """Phần đóng góp của từng phim đã thích vào điểm ALS (fold-in) cộng lại đúng bằng điểm ALS."""
+    svc, _ = service
+    liked = list(range(0, 24, 4))
+    Yl = svc.Y[liked]
+    A = svc._gram + svc.alpha * (Yl.T @ Yl)
+    parts = (1.0 + svc.alpha) * svc.Y @ np.linalg.solve(A, Yl.T)
+    assert np.allclose(parts.sum(axis=1), svc.Y @ svc._fold_in(liked), atol=1e-4)
+
+
+def test_low_rating_does_not_pull_similar_films(service):
+    """Phim giống phim bị chấm thấp hơn mọi phim đã thích thì không được gợi ý."""
+    svc, _ = service
+    liked = {i: 5 for i in range(0, 40, 4)}
+    disliked = {i: 1 for i in range(1, 13, 4)}
+    recs = svc.recommend({**liked, **disliked}, k=10)
+    sim = svc.sim
+    for r in recs:
+        j = r["item"]
+        assert sim[list(disliked), j].max() <= sim[list(liked), j].max()

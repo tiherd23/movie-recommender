@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from movierec import session as sess  # noqa: E402
 from movierec.db import Database  # noqa: E402
+from movierec.ranker import FEATURE_GROUPS  # noqa: E402
 from movierec.service import DEFAULT_ARTIFACT, GENRE_SHARE, GENRE_VI, display_title, genre_vi, load_or_build  # noqa: E402
 
 DB_PATH = os.environ.get("MOVIEREC_DB", str(ROOT / "data" / "app.db"))
@@ -34,8 +35,23 @@ MIN_RATINGS = 5  # số phim nên chấm trước khi gợi ý đủ tin cậy
 DIVERSITY = {"Không": 0.0, "Nhẹ": 0.2, "Vừa": 0.4, "Mạnh": 0.6}  # 1 - lam của MMR
 # Kết quả đo trên tập test cho kiến trúc hai tầng, 10 phim mỗi người (results/mmr.csv, scripts/beyond_accuracy.py)
 DIVERSITY_HELP = ("Xếp lại 50 phim điểm cao nhất để danh sách trải đều nhiều thể loại hơn. Đo trên tập kiểm tra "
-                  "(10 phim mỗi người, so với “Không”): **Nhẹ** thêm 0,8 thể loại, độ chính xác NDCG@10 giảm 0,6%; "
-                  "**Vừa** thêm 1,8 thể loại, giảm 2,7%; **Mạnh** thêm 2,7 thể loại, giảm 8,4%.")
+                  "(10 phim mỗi người, so với “Không”): **Nhẹ** thêm 0,8 thể loại, độ chính xác NDCG@10 không giảm; "
+                  "**Vừa** thêm 1,8 thể loại, giảm 2,8%; **Mạnh** thêm 2,8 thể loại, giảm 8,1%.")
+RESULTS_PATH = os.environ.get("MOVIEREC_RESULTS", str(ROOT / "results" / "summary.csv"))
+# Tên tiếng Việt và mô tả ngắn của các mô hình trong bảng kết quả thực nghiệm (results/summary.csv)
+MODEL_VI = {
+    "TwoStage": "Hai tầng (ALS + ItemKNN + nội dung + phổ biến → LightGBM)",
+    "ImplicitALS": "Implicit ALS (phân rã ma trận)",
+    "Hybrid": "Công thức trộn (ALS + ItemKNN + nội dung + phổ biến)",
+    "LightGCN": "LightGCN (mạng nơ-ron đồ thị)",
+    "NeuMF": "NeuMF (mạng nơ-ron)",
+    "ItemKNN": "ItemKNN (phim tương tự)",
+    "Popularity": "Phổ biến nhất",
+    "SVD": "SVD (dự đoán số sao)",
+    "BiasBaseline": "Điểm trung bình có hiệu chỉnh",
+    "ContentBased": "Theo nội dung (thể loại, năm)",
+    "SASRec": "SASRec (Transformer theo thứ tự chấm)",
+}
 TZ = "Asia/Ho_Chi_Minh"
 SESSION_KEY_PATH = os.environ.get("MOVIEREC_SESSION_KEY", str(Path(DB_PATH).parent / ".session_key"))
 PAGE_URLS = {"goi-y", "tim-phim", "tim-theo-mo-ta", "tro-ly", "phim-cua-toi", "quan-tri"}
@@ -56,6 +72,9 @@ CSS = """<style>
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .mr-badge{position:absolute;top:6px;left:6px;background:rgba(255,128,0,.95);color:#fff;font-size:.7rem;
   padding:2px 7px;border-radius:10px}
+.mr-change{position:absolute;top:6px;right:6px;background:#00a83a;color:#fff;font-size:.7rem;font-weight:600;
+  padding:2px 7px;border-radius:10px}
+.mr-change.up{background:#2f6fd6}
 .mr-reason{color:#ff9d3c;font-size:.74rem;line-height:1.3;margin-top:.35rem;height:2.6em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 /* phần tử chỉ chứa CSS/JS (cao 0) vẫn chiếm một khoảng cách giữa các phần tử: ẩn hẳn phần bao ngoài */
@@ -136,6 +155,14 @@ def get_extras(tmdb_path: str, trailers_path: str, m1: float, m2: float):
     return load_movie_extras(tmdb_path, trailers_path)
 
 
+@st.cache_data
+def get_results(path: str, mtime: float) -> pd.DataFrame | None:
+    """Bảng kết quả thực nghiệm trên tập test (scripts/run_experiments.py), để hiện cạnh gợi ý."""
+    if not Path(path).exists():
+        return None
+    return pd.read_csv(path).set_index("Model")
+
+
 svc, db = get_service(ARTIFACT), get_db(DB_PATH)
 SESSION_KEY = sess.load_key(SESSION_KEY_PATH)
 BLURBS = get_blurbs(BLURBS_PATH, _mtime(BLURBS_PATH))
@@ -213,17 +240,25 @@ def rating_stars(item: int, prefix: str, ratings: dict[int, int]) -> None:
                 on_change=_save_rating, args=(item, key), disabled=is_guest())
 
 
-def why_box(factors: list[tuple[str, float]]) -> None:
+GROUP_OF_LABEL = {label: group for group, label in FEATURE_GROUPS.items()}
+
+
+def why_box(factors: list[tuple[str, float]], src: dict[str, str] | None = None) -> None:
     """Các yếu tố ảnh hưởng mạnh nhất đến thứ hạng của phim (giá trị SHAP của bộ xếp hạng, gộp theo nhóm đặc trưng),
-    hiện thành phần trăm đóng góp để người dùng không phải đọc giá trị SHAP thô."""
+    hiện thành phần trăm đóng góp để người dùng không phải đọc giá trị SHAP thô. src: phim đã thích đóng góp nhiều
+    nhất cho từng nhóm (ALS, ItemKNN, nội dung), cùng nguồn với dòng lý do trên thẻ phim."""
+    src = src or {}
     total = sum(abs(v) for _, v in factors) or 1.0
     for label, v in factors:
         share = abs(v) / total
+        group = GROUP_OF_LABEL.get(label)
         label = re.sub(r"\s*\([^)]*\)$", "", label)  # bỏ tên thuật toán trong ngoặc
         color = "#00e054" if v > 0 else "#ff5c5c"
         bar = "█" * max(1, round(8 * share))
+        note = (f"<br><span style='color:#9ab'>chủ yếu từ: {html.escape(src[group])}</span>"
+                if v > 0 and group in src else "")
         st.markdown(f"<span style='font-size:0.8rem'>{'▲' if v > 0 else '▼'} {html.escape(label)}<br>"
-                    f"<span style='color:{color}'>{bar}</span> {share:.0%}</span>", unsafe_allow_html=True)
+                    f"<span style='color:{color}'>{bar}</span> {share:.0%}{note}</span>", unsafe_allow_html=True)
     st.caption("Phần trăm cho biết mỗi yếu tố chiếm bao nhiêu trong lý do xếp hạng phim này; ▲ đẩy phim lên, "
                "▼ kéo xuống.")
 
@@ -250,6 +285,11 @@ def card_html(m: dict) -> str:
               else '<div class="mr-noposter">🎬</div>')
     reason = f'<div class="mr-reason" title="{e(m["reason"])}">💡 {e(m["reason"])}</div>' if m.get("reason") else ""
     badge = '<div class="mr-badge">🔖 Muốn xem</div>' if m["item"] in st.session_state.get("watch_set", set()) else ""
+    change = m.get("change")  # thay đổi so với danh sách trước lần chấm gần nhất: "new" hoặc số hạng tăng
+    if change == "new":
+        badge += '<div class="mr-change" title="Mới vào danh sách sau lần chấm vừa rồi">Mới</div>'
+    elif change:
+        badge += f'<div class="mr-change up" title="Lên {change} hạng sau lần chấm vừa rồi">▲{change}</div>'
     poster = f'<div style="position:relative">{poster}{badge}</div>'
     return (f'{poster}<div class="mr-title" title="{e(display_title(m["title"]))}">{e(display_title(m["title"]))}</div>'
             f'<div class="mr-genres">{e(genre_vi(m["genres"], " · "))}</div>'
@@ -339,7 +379,7 @@ def movie_card(m: dict, prefix: str, ratings: dict[int, int]) -> None:
                 movie_dialog(m["item"], ratings)
             if m.get("why"):
                 with st.popover("Vì sao?", type="tertiary"):
-                    why_box(m["why"])
+                    why_box(m["why"], m.get("why_src"))
 
 
 def movie_grid(movies: list[dict], prefix: str, ratings: dict[int, int], cols: int = 6) -> None:
@@ -411,6 +451,85 @@ def _rate_batch(ratings: dict[int, int], new: bool = False) -> list[int]:
     return batch
 
 
+def _track_changes(recs: list[dict], ratings: dict[int, int], ctx: tuple) -> str:
+    """Minh họa việc gợi ý được tính lại ngay sau mỗi lần chấm (fold-in, không cần huấn luyện lại): so danh sách hiện
+    tại với danh sách trước lần chấm gần nhất, gắn nhãn "Mới" hoặc "▲n" lên thẻ phim và trả về một câu tóm tắt.
+    Phim vừa chấm tự rời khỏi danh sách, nên thứ hạng cũ được tính sau khi bỏ các phim đó để các phim phía sau
+    không bị tính là "lên hạng" chỉ vì có một chỗ trống."""
+    items = [m["item"] for m in recs]
+    method = recs[0].get("method") if recs else None
+    sig = tuple(sorted(ratings.items()))
+    prev = st.session_state.get("rec_track")
+    if prev is not None and prev["ctx"] == ctx and prev["sig"] == sig:
+        changes, summary = prev["changes"], prev["summary"]  # chưa chấm thêm: giữ nhãn của lần chấm trước
+    else:
+        changes, summary = {}, ""
+        if prev is not None and prev["ctx"] == ctx:
+            old = {j: r for r, j in enumerate([j for j in prev["items"] if j not in ratings])}
+            for r, j in enumerate(items):
+                if j not in old:
+                    changes[j] = "new"
+                elif old[j] - r >= 1:
+                    changes[j] = old[j] - r
+            n_new = sum(v == "new" for v in changes.values())
+            n_up = len(changes) - n_new
+            if prev["method"] != "two_stage" and method == "two_stage":
+                summary = f"🎉 Đã đủ 5 phim thích, chuyển sang gợi ý cá nhân hóa đầy đủ: {n_new} phim mới"
+            elif changes:
+                summary = (f"Sau lần chấm vừa rồi: {n_new} phim mới vào danh sách, {n_up} phim lên hạng "
+                           "(nhãn trên poster)")
+            else:
+                summary = "Sau lần chấm vừa rồi: thứ tự gợi ý gần như giữ nguyên"
+        st.session_state.rec_track = {"ctx": ctx, "sig": sig, "items": items, "method": method,
+                                      "changes": changes, "summary": summary}
+    for m in recs:
+        if m["item"] in changes:
+            m["change"] = changes[m["item"]]
+    return summary
+
+
+def model_info(method: str, liked: int) -> None:
+    """Một dòng cho biết mô hình nào đang tạo danh sách và độ chính xác của nó trên tập kiểm tra, mở ra là bảng kết
+    quả thực nghiệm của mọi mô hình đã thử."""
+    if method == "two_stage":
+        key, short = "TwoStage", "Kiến trúc hai tầng (LightGBM xếp hạng lại)"
+        detail = ("Tầng 1: bốn mô hình (Implicit ALS, ItemKNN, nội dung, độ phổ biến) cùng chọn khoảng 190 phim ứng "
+                  "viên. Tầng 2: LightGBM (LambdaRank) xếp hạng lại các ứng viên bằng điểm của bốn mô hình cùng đặc "
+                  "điểm của phim. Bấm “Vì sao?” trên thẻ phim để xem đóng góp của từng yếu tố (giá trị SHAP).")
+    elif liked:
+        key, short = "Hybrid", "Công thức trộn (chưa đủ 5 phim thích)"
+        detail = ("Điểm của Implicit ALS, ItemKNN, nội dung và độ phổ biến được chuẩn hóa rồi cộng có trọng số "
+                  "(trọng số chọn trên tập kiểm định). Khi có 5 phim chấm 4-5★, hệ thống chuyển sang kiến trúc "
+                  "hai tầng, chính xác hơn.")
+    else:
+        key, short = "Popularity", "Độ phổ biến theo thể loại (chưa có phim thích)"
+        detail = ("Chưa có phim nào được chấm 4-5★ nên chưa học được sở thích riêng: hệ thống chọn phim được thích "
+                  "nhiều nhất, trong các thể loại đã chọn nếu có.")
+    res = get_results(RESULTS_PATH, _mtime(RESULTS_PATH))
+    ndcg = (f" · NDCG@10 trên tập kiểm tra {fmt(res.loc[key, 'NDCG@10'], 4)}"
+            if res is not None and key in res.index else "")
+    with st.expander(f"🧠 Mô hình: {short}{ndcg}", key="model_info"):
+        st.write(detail)
+        if res is None:
+            return
+        table = res.sort_values("NDCG@10", ascending=False)
+        use = {"TwoStage": "Từ 5 phim thích", "Hybrid": "1-4 phim thích", "Popularity": "Chưa thích phim nào"}
+        st.dataframe(pd.DataFrame({
+            "Mô hình": [MODEL_VI.get(i, i) for i in table.index],
+            "NDCG@10": [fmt(v, 4) for v in table["NDCG@10"]],
+            "Recall@10": [fmt(v, 4) for v in table["Recall@10"]],
+            "Độ phủ": [f"{fmt(100 * v, 1)}%" for v in table["Coverage"]],
+            "So với Phổ biến": [str(v).replace(".", ",") for v in table["vs Popularity"]],
+            "Trên web": [("✔ đang dùng" if i == key else use[i]) if i in use else "" for i in table.index],
+        }), hide_index=True, width="stretch")
+        st.caption("Kết quả trên tập kiểm tra MovieLens 1M (6.040 người, phim chấm cuối cùng của mỗi người), 10 phim "
+                   "mỗi danh sách. NDCG@10: phim người dùng thực sự thích có nằm trong top 10 và nằm càng cao càng tốt. "
+                   "Độ phủ: tỉ lệ kho phim từng được gợi ý cho ít nhất một người.")
+        st.caption("SASRec cao nhất nhưng không dùng trên web: gần như toàn bộ lợi thế của nó đến từ thứ tự chấm điểm "
+                   "(xáo trộn thứ tự thì NDCG@10 còn 0,0663, thấp hơn kiến trúc hai tầng). Trên web, người dùng chấm "
+                   "theo thứ tự phim hiện ra trên trang chứ không theo thứ tự đã xem, nên thứ tự đó không mang thông tin.")
+
+
 def page_home(ratings: dict[int, int]) -> None:
     liked = sum(r >= 4 for r in ratings.values())
     cold = liked < MIN_RATINGS  # đủ 5 phim THÍCH (4-5 sao) mới dùng kiến trúc hai tầng, không phải 5 phim đã chấm
@@ -446,30 +565,37 @@ def page_home(ratings: dict[int, int]) -> None:
         left.multiselect("Thể loại yêu thích", svc.genres, default=genres, key="genre_select",
                          on_change=_save_genres, placeholder="Chọn vài thể loại bạn thích", select_all=False,
                          format_func=lambda g: GENRE_VI.get(g, g))
-        # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) chỉ giảm NDCG@10 của kiến trúc
-        # hai tầng 0,6% nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
+        # Mức đa dạng = 1 - lam của MMR. Khi đánh giá trên tập test, "Nhẹ" (lam 0,8) không làm giảm NDCG@10 của kiến
+        # trúc hai tầng nhưng thêm 0,8 thể loại cho mỗi danh sách 10 phim (scripts/beyond_accuracy.py)
         saved = "" if guest else db.get_diversity(st.session_state.user_id)
         level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY),
                                         default=saved if saved in DIVERSITY else "Nhẹ", key="diversity",
                                         required=True, on_change=_save_diversity, help=DIVERSITY_HELP)
         recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
                 if m["item"] not in shown][:18]
+        method = recs[0].get("method", "blend") if recs else "blend"
+        change = "" if guest else _track_changes(recs, ratings, (tuple(genres), level))
         chosen = f"thể loại bạn chọn ({genre_vi(genres)})" if genres else ""
         if guest:
             st.caption((f"Phim được thích nhiều nhất trên MovieLens thuộc {chosen}. " if genres else
                         "Phim được thích nhiều nhất trên MovieLens. Chọn thể loại ở trên để lọc. ")
                        + "Đăng nhập để chấm phim và nhận gợi ý riêng cho bạn.")
-        elif recs and recs[0].get("method") == "two_stage":
+        elif method == "two_stage":
             note = (f" Ít nhất {math.ceil(18 * GENRE_SHARE)}/18 phim thuộc {chosen}." if genres else "")
             st.caption(f"Gợi ý cá nhân hóa đầy đủ, dựa trên {liked} phim bạn thích.{note} "
                        "Bấm “Vì sao?” để xem yếu tố nào đưa phim lên.")
         else:
             basis = [f"{liked} phim bạn thích"] if liked else []
             basis += [chosen] if genres else []
-            st.caption(f"Gợi ý cơ bản dựa trên {', '.join(basis + ['độ phổ biến'])}. "
-                       f"Thích thêm {MIN_RATINGS - liked} phim (chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
+            basis.append("độ phổ biến")
+            st.caption((f"Gợi ý cơ bản dựa trên {', '.join(basis[:-1])} và {basis[-1]}. " if len(basis) > 1 else
+                        "Gợi ý cơ bản dựa trên độ phổ biến. ")
+                       + f"Thích thêm {MIN_RATINGS - liked} phim (chấm 4-5★) để nhận gợi ý cá nhân hóa đầy đủ.")
         n_genres = len({g for m in recs for g in m["genres"].split("|")})
         st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
+        model_info(method, liked)
+        if change:
+            st.info(change, icon=":material/autorenew:")
         movie_grid(recs, "rec", ratings)
 
 
