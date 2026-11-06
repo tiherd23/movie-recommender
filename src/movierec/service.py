@@ -23,9 +23,12 @@ from .tmdb import IMAGE_BASE
 
 DEFAULT_ARTIFACT = ROOT / "artifacts" / "service.pkl"
 LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
-MIN_LIKED_FOR_RANKER = 5  # đủ số phim thích mới dùng bộ xếp hạng hai tầng; ít hơn thì dùng công thức trộn
+# Trọng số độ phổ biến trong công thức trộn của web: w(n) = POP_C / n với n = số phim đã thích. Ít dữ liệu thì dựa
+# nhiều vào độ phổ biến, nhiều dữ liệu thì dựa vào sở thích riêng (co rút về phân phối chung). Chọn trên nhóm phát
+# triển của thí nghiệm người dùng mới (scripts/cold_start.py); với n khoảng 240 thì bằng trọng số 0,25 của Hybrid offline.
+POP_C = 60.0
 DISLIKE = 2  # chấm từ số sao này trở xuống là không thích
-GENRE_SHARE = 0.5  # đã chọn thể loại thì ít nhất nửa danh sách (kiến trúc hai tầng) thuộc các thể loại đó
+GENRE_SHARE = 0.5  # đã chọn thể loại (và đã thích ít nhất 1 phim) thì ít nhất nửa danh sách thuộc các thể loại đó
 
 # Tên tiếng Việt của 18 thể loại MovieLens (chỉ để hiển thị; dữ liệu và mô hình vẫn dùng tên gốc)
 GENRE_VI = {
@@ -86,6 +89,7 @@ class RecommenderService:
         self.ranker = ranker  # None: chưa huấn luyện bộ xếp hạng, chỉ dùng công thức trộn
         self.item_vecs = content.item_vecs_
         self.reg, self.alpha, self.weights = reg, alpha, weights
+        self.pop_c = POP_C  # trọng số độ phổ biến của công thức trộn = pop_c / số phim thích
         self._gram = self.Y.T @ self.Y + reg * np.eye(self.Y.shape[1], dtype=np.float32)
         self._title_lower = movies["title"].str.lower()
         self._title_tokens = [_norm_text(display_title(t)) for t in movies["title"]]
@@ -120,11 +124,14 @@ class RecommenderService:
 
     # ---------- huấn luyện / lưu / nạp ----------
     @classmethod
-    def build(cls, ds: Dataset, params: dict | None = None, with_ranker: bool = True) -> "RecommenderService":
+    def build(cls, ds: Dataset, params: dict | None = None, with_ranker: bool = True,
+              profile_ranker: bool = True) -> "RecommenderService":
         """Huấn luyện trên TOÀN BỘ dữ liệu (train + val + test) để phục vụ thật.
 
         with_ranker=True: huấn luyện thêm bộ xếp hạng hai tầng. Bộ xếp hạng học trên train -> nhãn val
         (để không rò rỉ), còn các mô hình tầng 1 phục vụ web thì học trên toàn bộ dữ liệu.
+        profile_ranker=True: bộ xếp hạng học từ hồ sơ mô phỏng theo đúng đường tính của web, gồm cả hồ sơ ngắn của
+        người dùng mới (movierec.profile_ranker); False: bộ xếp hạng gốc của thực nghiệm offline.
         Bản cho web không dùng giới tính, tuổi, nghề nghiệp vì người đăng ký không khai các thông tin đó.
         """
         params = params or {}
@@ -141,8 +148,14 @@ class RecommenderService:
         if with_ranker:
             from .ranker import TwoStageRanker
 
-            two = TwoStageRanker(als_p, knn_p, use_demographics=False)
-            two.fit_ranker(ds, ds.train, ds.val)
+            if profile_ranker:
+                from .profile_ranker import fit_profile_ranker
+
+                booster, _, two = fit_profile_ranker(ds, als_p, knn_p, weights)
+                two.booster_ = booster
+            else:
+                two = TwoStageRanker(als_p, knn_p, use_demographics=False)
+                two.fit_ranker(ds, ds.train, ds.val)
             two._fit_base(ds, full)  # thống kê phim (độ phổ biến, điểm trung bình...) trên toàn bộ dữ liệu
             ranker = {"booster": two.booster_, "n_candidates": two.n_candidates,
                       "item_feats": two.item_feats_, "item_genre": two.item_genre_}
@@ -186,8 +199,19 @@ class RecommenderService:
     def _rank_two_stage(self, ratings: dict[int, int], liked: list[int],
                         als_score: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Điểm từ bộ xếp hạng hai tầng cho MỘT người dùng web (phim ngoài ứng viên = -inf), kèm chỉ số phim
-        ứng viên và ma trận đặc trưng của chúng (dùng để giải thích bằng SHAP).
-        Đặc trưng được dựng bằng đúng hàm đã dùng lúc huấn luyện (candidate_features)."""
+        ứng viên và ma trận đặc trưng của chúng (dùng để giải thích bằng SHAP)."""
+        items, X = self.profile_features(ratings, liked, als_score)
+        out = np.full(len(self.movies), -np.inf, dtype=np.float32)
+        booster = self.ranker["booster"]
+        out[items] = booster.predict(X, num_iteration=booster.best_iteration)
+        return out, items, X
+
+    def profile_features(self, ratings: dict[int, int], liked: list[int], als_score: np.ndarray,
+                         seen_items: list[int] | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Ứng viên và ma trận đặc trưng của bộ xếp hạng cho một hồ sơ {phim: số sao}, tính đúng như khi phục vụ
+        web (ALS fold-in, ItemKNN, nội dung, độ phổ biến -> candidate_features). Cũng dùng để tạo dữ liệu huấn luyện
+        bộ xếp hạng (movierec.profile_ranker), nên đặc trưng lúc huấn luyện và lúc phục vụ là một.
+        seen_items: phim loại khỏi ứng viên (mặc định: các phim trong hồ sơ)."""
         from .ranker import candidate_features
 
         rated = list(ratings)
@@ -200,7 +224,7 @@ class RecommenderService:
             "content": (self.item_vecs @ (profile / (np.linalg.norm(profile) + 1e-8)))[None, :],
         }
         seen = np.zeros((1, len(self.movies)), dtype=bool)
-        seen[0, rated] = True
+        seen[0, rated if seen_items is None else seen_items] = True
         user_feats = np.array([[np.log1p(len(rated)), values.mean(), (values >= LIKE).mean()]], dtype=np.float32)
         # item_genre đã chia theo số thể loại của phim; nhân lại để ra cờ 0/1 rồi lập hồ sơ thể loại
         genre_flags = (self.ranker["item_genre"][liked] > 0).astype(np.float32)
@@ -208,10 +232,7 @@ class RecommenderService:
         user_genre /= max(user_genre.sum(), 1.0)
         _, items, X = candidate_features(scores, seen, self.ranker["n_candidates"], user_feats, user_genre,
                                          self.ranker["item_feats"], self.ranker["item_genre"])
-        out = np.full(len(self.movies), -np.inf, dtype=np.float32)
-        booster = self.ranker["booster"]
-        out[items] = booster.predict(X, num_iteration=booster.best_iteration)
-        return out, items, X
+        return items, X
 
     def _explain_two_stage(self, top, items: np.ndarray, X: np.ndarray, n: int = 4) -> list[list[tuple[str, float]]]:
         """Với mỗi phim trong top: tối đa n nhóm đặc trưng ảnh hưởng mạnh nhất đến điểm (giá trị SHAP, + là đẩy lên).
@@ -228,21 +249,23 @@ class RecommenderService:
         return out
 
     def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12,
-                  diversity: float = 0.0) -> list[dict]:
+                  diversity: float = 0.0, mode: str = "blend") -> list[dict]:
         """ratings: {chỉ số phim: số sao}. Trả về k phim chưa chấm, kèm lý do gợi ý.
 
         diversity (0..1): mức đa dạng thể loại. > 0 thì xếp hạng lại 50 phim điểm cao nhất bằng MMR với
         lam = 1 - diversity (xem movierec.beyond); 0 giữ nguyên thứ tự của mô hình.
 
-        - Đủ MIN_LIKED_FOR_RANKER phim thích: dùng kiến trúc hai tầng (mô hình tốt nhất khi đánh giá).
-        - Ít hơn: dùng công thức trộn, nơi thể loại đã chọn và độ phổ biến gánh phần thiếu dữ liệu.
+        mode="blend" (mặc định của web): công thức trộn với trọng số độ phổ biến POP_C / n. Thí nghiệm người dùng
+        mới cho thấy đây là cách tốt nhất với hồ sơ ngắn (scripts/cold_start.py, results/cold_start_tests.csv).
+        mode="two_stage": kiến trúc hai tầng (chế độ thử nghiệm trên web, cần ít nhất 1 phim thích), giải thích
+        bằng SHAP. Công thức trộn được giải thích bằng cách tách đúng đóng góp của từng thành phần.
         """
         genres = genres or []
         liked = [i for i, r in ratings.items() if r >= LIKE]
         knn_part = self.sim[liked].toarray() if liked else None  # (số phim thích, tổng số phim)
         als_score = self.Y @ self._fold_in(liked) if liked else None
 
-        if self.ranker is not None and len(liked) >= MIN_LIKED_FOR_RANKER:
+        if mode == "two_stage" and self.ranker is not None and liked:
             (score, cand_items, cand_X), method = self._rank_two_stage(ratings, liked, als_score), "two_stage"
         else:
             method = "blend"
@@ -256,14 +279,18 @@ class RecommenderService:
 
         top = self._top(score, k, diversity)
         added: set[int] = set()
-        if method == "two_stage" and genres:
+        if genres and liked:
             top, added = self._genre_quota(top, score, genres, ratings, liked, als_score, knn_part, k)
         why = [None] * len(top)
+        if method == "blend" and liked and top:
+            why = self._explain_blend(top, liked, genres, als_score, knn_part)
         if method == "two_stage" and top:
             pos = set(int(j) for j in cand_items)
             in_cand = [j for j in top if j in pos]
             factors = dict(zip(in_cand, self._explain_two_stage(in_cand, cand_items, cand_X))) if in_cand else {}
             why = [factors.get(j) for j in top]
+        from .ranker import FEATURE_GROUPS
+
         kinds = self._reason_kinds(top, why, method, liked, genres, als_score, knn_part)
         src = self._source_films(top, liked, knn_part)
         out = []
@@ -286,6 +313,9 @@ class RecommenderService:
                 reason = f"Hợp thể loại bạn hay xem: {self._shared_genres(j, liked)}"
             elif match:
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
+            elif liked and dict(factors or []).get(FEATURE_GROUPS["als"], 0) > 0:
+                # độ phổ biến đóng góp nhiều nhất (thường gặp khi mới thích vài phim) nhưng phần ALS cũng dương
+                reason = f"Phim được nhiều người thích, cả người thích {name('als')}"
             else:
                 reason = self.popular_reason(int(j))
             extra = {"added": True} if j in added else {}
@@ -294,6 +324,19 @@ class RecommenderService:
                 extra["why_src"] = {g: name(g) for g in ("als", "knn", "content") if liked}
             value = float(score[j]) if np.isfinite(score[j]) else None
             out.append(self._movie(int(j), score=value, reason=reason, method=method, reason_kind=kind, **extra))
+        return out
+
+    def _explain_blend(self, top, liked, genres, als_score, knn_part, n: int = 4) -> list[list[tuple[str, float]]]:
+        """Đóng góp CHÍNH XÁC của từng thành phần vào điểm công thức trộn (điểm = tổng các thành phần), cùng định
+        dạng với giải thích SHAP: [(tên nhóm, giá trị)], sắp theo độ lớn. Mỗi thành phần là điểm z có trọng số, tức
+        đã so với một phim trung bình trong kho, nên dương là đẩy phim lên."""
+        from .ranker import FEATURE_GROUPS
+
+        parts = self._blend_parts(liked, genres, als_score, knn_part)
+        out = []
+        for j in top:
+            items = [(FEATURE_GROUPS[g], float(v[j])) for g, v in parts.items()]
+            out.append(sorted(items, key=lambda t: -abs(t[1]))[:n])
         return out
 
     def _reason_kinds(self, top, why, method, liked, genres, als_score, knn_part) -> list[str]:
@@ -377,8 +420,9 @@ class RecommenderService:
         # chưa có phim thích nào: thể loại đã chọn là tín hiệu chính
         parts["content"] = ((w_cb if liked else 1.0) * _z(self.item_vecs @ profile) if np.linalg.norm(profile) > 0
                             else np.zeros(n, dtype=np.float32))
-        # log1p: số lượt thích lệch rất mạnh về vài phim, lấy log để phim nổi tiếng không lấn át
-        parts["pop"] = (w_pop if liked else 1.0) * _z(np.log1p(self.pop))
+        # log1p: số lượt thích lệch rất mạnh về vài phim, lấy log để phim nổi tiếng không lấn át.
+        # Trọng số POP_C / n: ít phim thích thì dựa nhiều vào độ phổ biến (w_pop của Hybrid offline không dùng ở web).
+        parts["pop"] = (self.pop_c / len(liked) if liked else 1.0) * _z(np.log1p(self.pop))
         return parts
 
     def _blend_score(self, liked: list[int], genres: list[str], als_score, knn_part) -> np.ndarray:

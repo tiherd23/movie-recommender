@@ -17,21 +17,42 @@ def service(fake_ml1m, tmp_path_factory):
                                     "ItemKNN": {"k": 20, "shrink": 0.0}})
     path = tmp_path_factory.mktemp("art") / "service.pkl"
     svc.save(path)
-    return RecommenderService.load(path), path
+    svc = RecommenderService.load(path)
+    # Dữ liệu giả chỉ có 120 phim và tín hiệu sở thích yếu hơn nhiều so với MovieLens, nên trọng số độ phổ biến 60/n
+    # (chọn trên MovieLens) sẽ lấn át; hạ xuống để các test kiểm tra được phần cá nhân hóa.
+    svc.pop_c = 1.0
+    return svc, path
 
 
-def test_service_uses_two_stage_when_enough_likes(service):
+def test_service_modes(service):
+    """Mặc định: công thức trộn cho mọi người (kể cả nhiều phim thích); mode="two_stage": kiến trúc hai tầng."""
     svc, _ = service
     assert svc.ranker is not None
     group = lambda item: (item + 1) % 4
     liked = dict(list({i: 5 for i in range(len(svc.movies)) if group(i) == 2}.items())[:8])
-    recs = svc.recommend(liked, k=10)
-    assert recs and all(r["method"] == "two_stage" for r in recs)
-    assert all(r["item"] not in liked for r in recs)
-    assert np.mean([group(r["item"]) == 2 for r in recs]) >= 0.8
-    few = svc.recommend(dict(list(liked.items())[:2]), k=5)  # ít phim thích -> công thức trộn
-    assert all(r["method"] == "blend" for r in few)
-    assert all(1 <= len(r["why"]) <= 4 for r in recs) and not any("why" in r for r in few)
+    for mode in ("blend", "two_stage"):
+        recs = svc.recommend(liked, k=10, mode=mode)
+        assert recs and all(r["method"] == mode for r in recs)
+        assert all(r["item"] not in liked for r in recs)
+        assert np.mean([group(r["item"]) == 2 for r in recs]) >= 0.8
+        assert all(1 <= len(r["why"]) <= 4 for r in recs)
+    assert not any("why" in r for r in svc.recommend({}, k=5))  # chưa thích phim nào: không có giải thích
+
+
+def test_blend_explanation_is_exact(service):
+    """Công thức trộn: các thành phần trong "Vì sao?" cộng lại đúng bằng điểm; trọng số phổ biến = POP_C / n."""
+    from movierec.service import POP_C, RecommenderService, _z
+
+    svc, path = service
+    liked = list(range(0, 24, 4))
+    als = svc.Y @ svc._fold_in(liked)
+    knn = svc.sim[liked].toarray()
+    score = svc._blend_score(liked, [], als, knn)
+    parts = svc._blend_parts(liked, [], als, knn)
+    assert np.allclose(parts["pop"], svc.pop_c / len(liked) * _z(np.log1p(svc.pop)))
+    assert RecommenderService.load(path).pop_c == POP_C == 60  # web dùng 60/n
+    for j, factors in zip(range(5), svc._explain_blend(list(range(5)), liked, [], als, knn)):
+        assert len(factors) == 4 and abs(sum(v for _, v in factors) - score[j]) < 1e-4
 
 
 def test_shap_contributions_add_up_to_ranker_score(service):
@@ -239,11 +260,11 @@ def test_genres_count_in_two_stage_mode(service):
     svc.movies = svc.movies.copy()
     svc.movies["genres"] = ["Horror" if group(i) == 3 else g for i, g in enumerate(svc.movies["genres"])]
     liked = dict(list({i: 5 for i in range(len(svc.movies)) if group(i) == 1}.items())[:6])
-    base = svc.recommend(liked, k=10)
+    base = svc.recommend(liked, k=10, mode="two_stage")
     assert base[0]["method"] == "two_stage"
     target = "Horror"
     assert sum(target in r["genres"] for r in base) < 5
-    recs = svc.recommend(liked, [target], k=10)
+    recs = svc.recommend(liked, [target], k=10, mode="two_stage")
     assert sum(target in r["genres"].split("|") for r in recs) >= 5
     assert len({r["item"] for r in recs}) == 10 and not set(liked) & {r["item"] for r in recs}
     assert recs[0]["item"] == base[0]["item"]  # phim mô hình chấm cao nhất vẫn đứng đầu
@@ -273,7 +294,7 @@ def test_reason_matches_explanation(service):
 
     svc, _ = service
     liked = {i: 5 for i in range(0, 40, 4)}
-    recs = svc.recommend(liked, k=10)
+    recs = svc.recommend(liked, k=10, mode="two_stage")
     kind_of = {FEATURE_GROUPS[g]: k for g, k in [("als", "als"), ("knn", "knn"), ("content", "content"),
                                                   ("genre", "genre"), ("item_genre", "genre")]}
     titles = {svc.movies.iloc[i]["title"].split(" (")[0] for i in liked}

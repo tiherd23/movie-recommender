@@ -14,3 +14,4 @@ reports/
 logs/
 data/.session_key
 data/*.db
+results/cold_start_users*.csv
