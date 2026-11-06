@@ -58,6 +58,8 @@ class Database:
             raise ValueError("Tên đăng nhập chỉ gồm chữ, số, dấu chấm hoặc gạch dưới, tối đa 30 ký tự (không có khoảng trắng).")
         if username.lower() in {r.lower() for r in reserved}:
             raise ValueError("Tên đăng nhập này được dành riêng, hãy chọn tên khác.")
+        if self.conn.execute("SELECT 1 FROM users WHERE username = ? COLLATE NOCASE", (username,)).fetchone():
+            raise ValueError("Tên đăng nhập đã tồn tại.")  # không phân biệt chữ hoa, chữ thường
         salt = secrets.token_bytes(16)
         try:
             with self.conn:
@@ -71,7 +73,9 @@ class Database:
 
     def login(self, username: str, password: str) -> int | None:
         row = self.conn.execute(
-            "SELECT id, salt, pw_hash FROM users WHERE username = ?", (username.strip(),)
+            # không phân biệt chữ hoa, chữ thường; nếu dữ liệu cũ có hai tên chỉ khác hoa/thường thì ưu tiên tên khớp đúng
+            "SELECT id, salt, pw_hash FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC",
+            (username.strip(), username.strip())
         ).fetchone()
         if row and secrets.compare_digest(_hash(password, row[1]), row[2]):
             return int(row[0])

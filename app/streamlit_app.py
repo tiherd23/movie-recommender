@@ -72,6 +72,9 @@ CSS = """<style>
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .mr-badge{position:absolute;top:6px;left:6px;background:rgba(255,128,0,.95);color:#fff;font-size:.7rem;
   padding:2px 7px;border-radius:10px}
+[data-testid="stElementToolbar"]{display:none}
+[role="listbox"][data-empty="true"] [role="option"] span{font-size:0}
+[role="listbox"][data-empty="true"] [role="option"] span::after{content:"Không tìm thấy";font-size:.9rem}
 .mr-change{position:absolute;top:6px;right:6px;background:#00a83a;color:#fff;font-size:.7rem;font-weight:600;
   padding:2px 7px;border-radius:10px}
 .mr-change.up{background:#2f6fd6}
@@ -225,6 +228,10 @@ def _save_rating(item: int, key: str) -> None:
     """st.feedback trả 0..4 (None khi bấm lại ngôi sao đang chọn để bỏ chấm); lưu thành 1..5 sao."""
     value = st.session_state[key]
     db.rate(st.session_state.user_id, item, None if value is None else value + 1)
+    if key.startswith("rec_") and "rec_shown" in st.session_state:
+        # Chấm ngay trên danh sách gợi ý: giữ nguyên danh sách đang thấy đến khi người dùng bấm "Cập nhật", để các
+        # thẻ không đổi chỗ giữa hai lần bấm (bấm nhanh liên tục sẽ rơi nhầm vào phim khác).
+        st.session_state.setdefault("rec_hold", st.session_state.rec_shown)
     name = display_title(svc.movies.iloc[item]["title"])
     st.toast(f"Đã bỏ chấm “{name}”" if value is None else f"Đã lưu {value + 1}★ cho “{name}”",
              icon=":material/star:")
@@ -464,7 +471,8 @@ def _track_changes(recs: list[dict], ratings: dict[int, int], ctx: tuple) -> str
         changes, summary = prev["changes"], prev["summary"]  # chưa chấm thêm: giữ nhãn của lần chấm trước
     else:
         changes, summary = {}, ""
-        if prev is not None and prev["ctx"] == ctx:
+        prev_rated = {j for j, _ in prev["sig"]} if prev is not None else set()
+        if prev is not None and prev["ctx"] == ctx and not prev_rated - set(ratings):  # chỉ khi có thêm lượt chấm
             old = {j: r for r, j in enumerate([j for j in prev["items"] if j not in ratings])}
             for r, j in enumerate(items):
                 if j not in old:
@@ -571,10 +579,18 @@ def page_home(ratings: dict[int, int]) -> None:
         level = right.segmented_control("Độ đa dạng thể loại", list(DIVERSITY),
                                         default=saved if saved in DIVERSITY else "Nhẹ", key="diversity",
                                         required=True, on_change=_save_diversity, help=DIVERSITY_HELP)
-        recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
-                if m["item"] not in shown][:18]
+        ctx = (tuple(genres), level)
+        hold = st.session_state.get("rec_hold")
+        if hold is not None and hold["ctx"] == ctx:
+            recs, change = hold["recs"], ""
+        else:
+            st.session_state.pop("rec_hold", None)
+            hold = None
+            recs = [m for m in svc.recommend(ratings, genres, k=18 + len(shown), diversity=DIVERSITY[level or "Nhẹ"])
+                    if m["item"] not in shown][:18]
+            change = "" if guest else _track_changes(recs, ratings, ctx)
+            st.session_state.rec_shown = {"ctx": ctx, "recs": recs}
         method = recs[0].get("method", "blend") if recs else "blend"
-        change = "" if guest else _track_changes(recs, ratings, (tuple(genres), level))
         chosen = f"thể loại bạn chọn ({genre_vi(genres)})" if genres else ""
         if guest:
             st.caption((f"Phim được thích nhiều nhất trên MovieLens thuộc {chosen}. " if genres else
@@ -594,7 +610,14 @@ def page_home(ratings: dict[int, int]) -> None:
         n_genres = len({g for m in recs for g in m["genres"].split("|")})
         st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
         model_info(method, liked)
-        if change:
+        if hold is not None:
+            n_new = sum(m["item"] in ratings for m in recs)
+            with st.container(border=True, horizontal=True, vertical_alignment="center"):
+                st.markdown(f"Bạn vừa chấm {n_new} phim trong danh sách này. Danh sách được giữ nguyên để bạn chấm "
+                            "tiếp; bấm cập nhật để xem gợi ý mới tính theo các lần chấm đó.")
+                st.button("Cập nhật gợi ý", key="rec_refresh", icon=":material/autorenew:", type="primary",
+                          on_click=lambda: st.session_state.pop("rec_hold", None))
+        elif change:
             st.info(change, icon=":material/autorenew:")
         movie_grid(recs, "rec", ratings)
 
@@ -688,7 +711,7 @@ def page_assistant(ratings: dict[int, int]) -> None:
             st.markdown(turn["text"])
             if turn.get("movies"):
                 movie_grid(turn["movies"], f"chat{n}", ratings, cols=5)
-    message = st.chat_input("Bạn muốn xem phim gì?", key="chat_input")
+    message = (st.chat_input("Bạn muốn xem phim gì?", key="chat_input") or "").strip()
     if message:
         with st.chat_message("user"):
             st.markdown(message)
@@ -762,7 +785,7 @@ def page_admin(ratings: dict[int, int]) -> None:
     for col in ("avg_rating", "last_rated"):  # người chưa chấm phim nào: SQLite trả None
         users[col] = pd.to_numeric(users[col], errors="coerce")
     names = users.set_index("id")["username"]
-    tab_use, tab_users, tab_sys = st.tabs(["Hoạt động", "Người dùng", "Hệ thống"])
+    tab_use, tab_users, tab_sys = st.tabs(["Hoạt động", "Người dùng", "Hệ thống"], key="admin_tab")
     with tab_use:
         if all_r.empty:
             st.info("Chưa có lượt chấm điểm nào trên ứng dụng.")
@@ -802,12 +825,15 @@ def page_admin(ratings: dict[int, int]) -> None:
         st.caption("Giờ Việt Nam (UTC+7).")
         others = users[users["id"] != st.session_state.user_id]
         if not others.empty:
-            with st.form("delete_user_form"):
+            with st.form("delete_user_form", clear_on_submit=True):  # gửi xong thì bỏ chọn và bỏ đánh dấu
                 who = st.selectbox("Xóa tài khoản (kèm toàn bộ lượt chấm và danh sách muốn xem)",
-                                   others["id"], format_func=lambda i: names.loc[i])
+                                   others["id"], format_func=lambda i: names.loc[i], index=None,
+                                   placeholder="Chọn tài khoản cần xóa")
                 sure = st.checkbox("Tôi chắc chắn muốn xóa tài khoản này")
                 if st.form_submit_button("Xóa tài khoản", type="primary"):
-                    if not sure:
+                    if who is None:
+                        st.warning("Hãy chọn tài khoản cần xóa.")
+                    elif not sure:
                         st.warning("Hãy đánh dấu “Tôi chắc chắn muốn xóa tài khoản này” để xác nhận.")
                     else:
                         n = int(users.set_index("id").loc[who, "n_ratings"])
@@ -870,6 +896,21 @@ def _header(title: str, ratings: dict[int, int]) -> None:
                 login_again()
 
 
+def _unknown_path(known: set[str]) -> str:
+    """Đoạn cuối đường dẫn đang mở nếu không thuộc trang nào của ứng dụng (vd. /abc, /Tim-Phim, /goi-y khi đã đăng
+    nhập vì trang mặc định nằm ở "/"), để đăng ký một trang ẩn đúng đường dẫn đó."""
+    path = (st.context.url or "").split("?")[0].split("#")[0]
+    path = path.split("://", 1)[-1].split("/", 1)[1] if "/" in path.split("://", 1)[-1] else ""
+    path = path.strip("/")
+    return path if path and path not in known | {"trang-chu"} and re.fullmatch(r"[\w.\-]{1,100}", path) else ""
+
+
+def _go_home() -> None:
+    if st.session_state.get("unknown_from") != "goi-y":
+        st.toast("Không có trang này, đã chuyển về trang Gợi ý cho bạn.", icon=":material/info:")
+    st.switch_page(st.session_state.home_page)
+
+
 def main() -> None:
     st.logo(str(ROOT / "app" / "assets" / "logo.svg"), size="large")
     st.markdown(CSS, unsafe_allow_html=True)
@@ -888,7 +929,11 @@ def main() -> None:
         for url in ["goi-y", *sorted(PAGE_URLS - {"goi-y"})]:
             run = lambda: page_auth()  # noqa: E731
             run.__name__ = "dang_nhap_" + url.replace("-", "_")
-            auth.append(st.Page(run, title="Đăng nhập", url_path=url, default=url == "goi-y"))
+            # trang mặc định nằm ở "/", đường dẫn riêng của nó chỉ dùng nội bộ để không trùng với /goi-y
+            auth.append(st.Page(run, title="Đăng nhập", url_path="trang-chu" if url == "goi-y" else url,
+                                default=url == "goi-y"))
+        if extra := _unknown_path(PAGE_URLS - {"goi-y"}):
+            auth.append(st.Page(lambda: page_auth(), title="Đăng nhập", url_path=extra, visibility="hidden"))
         st.navigation(auth, position="hidden").run()
         return
     guest = is_guest()
@@ -919,10 +964,16 @@ def main() -> None:
     def page(fn, title, icon, url):
         run = lambda: fn(ratings)  # noqa: E731
         run.__name__ = url.replace("-", "_")
-        return st.Page(run, title=title, icon=icon, url_path=url, default=url == start)
+        return st.Page(run, title=title, icon=icon, url_path="trang-chu" if url == start else url,
+                       default=url == start)
 
     pages = [page(*spec) for spec in specs]
-    current = st.navigation(pages, position="top")
+    st.session_state.home_page = next(p for p in pages if p._default)
+    nav = list(pages)
+    if extra := _unknown_path({p.url_path for p in pages if not p._default}):
+        st.session_state.unknown_from = extra
+        nav.append(st.Page(_go_home, title="Gợi ý cho bạn", url_path=extra, visibility="hidden"))
+    current = st.navigation(nav, position="top")
     if st.session_state.pop("go_asked", False) and asked in allowed - set(hidden) and current.url_path != asked:
         st.switch_page(next(p for p in pages if p.url_path == asked))
     with st.container(key="mobile_nav", horizontal=True):  # chỉ hiện trên màn hình hẹp (xem CSS)

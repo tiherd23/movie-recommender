@@ -201,10 +201,16 @@ def test_admin_page_only_for_admin(service, tmp_path, monkeypatch):
     at.run()
     assert not at.exception and at.title[0].value == "Quản trị hệ thống"
     assert [m.value for m in at.metric if m.label == "Tài khoản"] == ["2"]  # hai tài khoản: tester và admin
-    at.button(key="FormSubmitter:delete_user_form-Xóa tài khoản").click().run()  # chưa xác nhận: chỉ cảnh báo
+    delete = "FormSubmitter:delete_user_form-Xóa tài khoản"
+    assert at.selectbox[0].value is None  # không chọn sẵn tài khoản nào
+    at.button(key=delete).click().run()  # chưa chọn tài khoản: chỉ nhắc
+    assert any("Hãy chọn tài khoản" in w.value for w in at.warning)
+    at.selectbox[0].set_value(1)  # id của tài khoản "tester"
+    at.button(key=delete).click().run()  # chưa xác nhận: chỉ cảnh báo
     assert any("Tôi chắc chắn" in w.value for w in at.warning) and Database(tmp_path / "web.db").stats()["users"] == 2
+    at.selectbox[0].set_value(1)
     at.checkbox[0].check()
-    at.button(key="FormSubmitter:delete_user_form-Xóa tài khoản").click().run()
+    at.button(key=delete).click().run()
     assert not at.exception and Database(tmp_path / "web.db").stats()["users"] == 1
     assert any("Đã xóa tài khoản “tester”" in m.value for m in at.success)
 
@@ -299,3 +305,12 @@ def test_low_rating_does_not_pull_similar_films(service):
     for r in recs:
         j = r["item"]
         assert sim[list(disliked), j].max() <= sim[list(liked), j].max()
+
+
+def test_username_case_insensitive(tmp_path):
+    """Tên đăng nhập không phân biệt chữ hoa, chữ thường: không tạo được tài khoản trùng, đăng nhập bằng chữ hoa được."""
+    db = Database(tmp_path / "u.db")
+    uid = db.register("Tester_1", "12345")
+    with pytest.raises(ValueError, match="đã tồn tại"):
+        db.register("TESTER_1", "12345")
+    assert db.login("tester_1", "12345") == uid and db.login("TESTER_1", "sai00") is None
