@@ -41,27 +41,27 @@ DIVERSITY_HELP = ("Trộn thêm phim thuộc thể loại khác vào danh sách 
 # Số liệu đo trên tập kiểm tra (results/mmr.csv, scripts/beyond_accuracy.py): đo với KIẾN TRÚC HAI TẦNG, chưa đo với công thức trộn
 DIVERSITY_NOTE = ("Độ đa dạng (xếp lại 50 phim điểm cao nhất bằng MMR) mới được đo với kiến trúc hai tầng trên tập kiểm "
                   "tra, so với mức “Không”: Nhẹ thêm 0,8 thể loại mỗi danh sách 10 phim mà NDCG@10 không giảm; Vừa thêm "
-                  "1,8 thể loại, giảm 2,8%; Mạnh thêm 2,8 thể loại, giảm 8,1%. Với công thức trộn (mặc định trên web), "
-                  "ảnh hưởng của độ đa dạng chưa được đo.")
-# Lựa chọn "Kiểu gợi ý" (đưa ra SAU thí nghiệm người dùng mới, là quyết định về sản phẩm): mặc định là công thức được
-# chọn theo quy tắc đặt trước (120/n). Mức "Sát gu nhất" là kiến trúc hai tầng: kém hơn về NDCG@10 nhưng danh sách bám
-# thể loại của hồ sơ hơn hẳn (scripts/taste_check.py, results/taste_check.csv).
-STYLES = {"Phổ biến": ("blend", None), "Cân bằng": ("blend", 60.0), "Sát gu nhất": ("two_stage", None)}  # None: POP_C
-DEFAULT_STYLE = "Phổ biến"
+                  "1,8 thể loại, giảm 2,8%; Mạnh thêm 2,8 thể loại, giảm 8,1%. Các số này đo với người dùng có lịch sử "
+                  "đầy đủ; với người dùng mới và với công thức trộn, ảnh hưởng của độ đa dạng chưa được đo.")
+# Lựa chọn "Kiểu gợi ý". Mặc định là kiến trúc hai tầng học cả hồ sơ ngắn: mô hình có chỉ số chính cao nhất trên tập
+# phát triển của thí nghiệm người dùng mới (scripts/cold_start.py, sau khi sửa lỗi đo ứng viên), ngang công thức trộn 120/n
+# với người dùng nặng và hơn 4,7% với người dùng nhẹ trên tập kiểm tra, danh sách cũng bám thể loại của hồ sơ hơn
+# (scripts/taste_check.py). Hai mức còn lại là công thức trộn với trọng số độ phổ biến 60/n và 120/n.
+STYLES = {"Sát gu nhất": ("two_stage", None), "Cân bằng": ("blend", 60.0), "Phổ biến": ("blend", None)}  # None: POP_C
+DEFAULT_STYLE = "Sát gu nhất"
 STYLE_KEY = {"Phổ biến": "Trộn, w(n)=120·n^-1", "Cân bằng": "Trộn, w(n)=60·n^-1",
              "Sát gu nhất": "Hai tầng (học cả hồ sơ ngắn)"}
-STYLE_HELP = ("Khi mới thích vài phim, hệ thống còn biết ít về bạn nên dựa nhiều vào độ phổ biến. **Phổ biến** (mặc "
-              "định): chính xác nhất trong thí nghiệm người dùng mới, nhưng danh sách có nhiều phim nổi tiếng ngoài gu "
-              "của bạn. **Cân bằng**: giảm một nửa trọng số độ phổ biến, độ chính xác gần như bằng. **Sát gu nhất**: "
-              "kiến trúc hai tầng (LightGBM), danh sách bám thể loại bạn thích nhất nhưng độ chính xác thấp hơn "
-              "khoảng 13% trong thí nghiệm.")
+STYLE_HELP = ("**Sát gu nhất** (mặc định): kiến trúc hai tầng (LightGBM), chính xác nhất trong thí nghiệm người dùng "
+              "mới và danh sách bám thể loại bạn thích nhất. **Cân bằng** và **Phổ biến**: công thức trộn, dựa nhiều "
+              "vào độ phổ biến khi bạn mới thích vài phim nên danh sách có thêm phim nổi tiếng ngoài gu; khi mới thích "
+              "đúng 1 phim, hai kiểu này chính xác hơn một chút.")
 RESULTS_PATH = os.environ.get("MOVIEREC_RESULTS", str(ROOT / "results" / "summary.csv"))
 COLD_PATH = str(ROOT / "results" / "cold_start_pooled.csv")  # thí nghiệm người dùng mới (scripts/cold_start*.py)
 COLD_LEVELS = [1, 2, 3, 5, 7, 10, 15, 20, 30]
 # tên mô hình trong results/cold_start_pooled.csv -> tên hiển thị
-COLD_MODELS = {"Trộn, w(n)=120·n^-1": "Công thức trộn, trọng số phổ biến 120/n (mặc định)",
+COLD_MODELS = {"Hai tầng (học cả hồ sơ ngắn)": "Hai tầng, học cả hồ sơ ngắn (“Sát gu nhất”, mặc định)",
                "Trộn, w(n)=60·n^-1": "Công thức trộn, trọng số phổ biến 60/n (“Cân bằng”)",
-               "Hai tầng (học cả hồ sơ ngắn)": "Hai tầng, học cả hồ sơ ngắn (“Sát gu nhất”)",
+               "Trộn, w(n)=120·n^-1": "Công thức trộn, trọng số phổ biến 120/n (“Phổ biến”)",
                "Công thức trộn": "Công thức trộn, trọng số cố định",
                "Hai tầng": "Hai tầng, bản của thực nghiệm chính",
                "Implicit ALS": "Implicit ALS",
@@ -114,6 +114,8 @@ CSS = """<style>
 [data-testid="stLayoutWrapper"]:has(> .st-key-mobile_nav){display:none!important}
 /* màn hình vừa (laptop nhỏ, máy tính bảng ngang): 6 cột hẹp, thu nhỏ hàng sao để không tràn ra ngoài thẻ */
 @media (min-width: 641px) and (max-width: 1280px){
+  [data-testid="stButtonGroup"] button{padding-left:.45rem!important;padding-right:.45rem!important}
+  [data-testid="stButtonGroup"] button p{font-size:.82rem!important;white-space:nowrap}
   [data-testid="stColumn"]:has(.mr-poster, .mr-noposter) [data-testid="stFeedback"]{overflow:hidden}
   [data-testid="stColumn"]:has(.mr-poster, .mr-noposter) [data-testid="stFeedback"] button{padding:0!important;min-width:0!important}
   [data-testid="stColumn"]:has(.mr-poster, .mr-noposter) [data-testid="stFeedback"] svg,
@@ -144,7 +146,7 @@ def get_service(path: str):
     return load_or_build(path)  # cache_resource: chỉ nạp một lần cho mọi phiên
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_db(path: str) -> Database:
     return Database(path)
 
@@ -168,7 +170,7 @@ def _mtime(path: str) -> float:
     return Path(path).stat().st_mtime if Path(path).exists() else 0.0
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_blurbs(path: str, mtime: float) -> dict[str, str]:
     """Câu giới thiệu tiếng Việt viết sẵn (scripts/build_blurbs.py). Tham số mtime: tệp được cập nhật thì tự nạp lại."""
     from movierec.assistant import load_blurbs
@@ -176,7 +178,7 @@ def get_blurbs(path: str, mtime: float) -> dict[str, str]:
     return load_blurbs(path)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Đang chuẩn bị trợ lý (lần đầu có thể mất khoảng 30–40 giây)...")
 def get_assistant(artifact: str, semantic_path: str, model: str, blurbs_path: str, blurbs_mtime: float):
     """Trợ lý hội thoại. Không có Ollama thì llm=None: vẫn tìm được phim, chỉ thiếu phần hiểu câu và lời đáp."""
     from movierec.assistant import Assistant, OllamaClient
@@ -186,7 +188,7 @@ def get_assistant(artifact: str, semantic_path: str, model: str, blurbs_path: st
                      blurbs=get_blurbs(blurbs_path, blurbs_mtime))
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Đang nạp thông tin phim...")
 def get_extras(tmdb_path: str, trailers_path: str, m1: float, m2: float):
     """Thời lượng, điểm TMDB, đạo diễn, diễn viên, trailer theo mã phim MovieLens (chỉ để hiển thị)."""
     from movierec.extras import load_movie_extras
@@ -194,7 +196,7 @@ def get_extras(tmdb_path: str, trailers_path: str, m1: float, m2: float):
     return load_movie_extras(tmdb_path, trailers_path)
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def get_results(path: str, mtime: float) -> pd.DataFrame | None:
     """Bảng kết quả thực nghiệm trên tập test (scripts/run_experiments.py), để hiện cạnh gợi ý."""
     if not Path(path).exists():
@@ -202,7 +204,7 @@ def get_results(path: str, mtime: float) -> pd.DataFrame | None:
     return pd.read_csv(path).set_index("Model")
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def get_cold(path: str, mtime: float) -> pd.DataFrame | None:
     """NDCG@10 theo số phim đã thích của thí nghiệm người dùng mới, dạng bảng: hàng = số phim, cột = mô hình."""
     if not Path(path).exists():
@@ -615,7 +617,10 @@ def model_info(method: str, liked: int, style: str = DEFAULT_STYLE) -> None:
         key, short = "Hai tầng (học cả hồ sơ ngắn)", "Kiến trúc hai tầng, LightGBM (“Sát gu nhất”)"
         detail = ("Tầng 1: bốn mô hình (Implicit ALS, ItemKNN, nội dung, độ phổ biến) cùng chọn khoảng 190 phim ứng "
                   "viên. Tầng 2: LightGBM (LambdaRank) xếp hạng lại các ứng viên; bản này được huấn luyện thêm với hồ "
-                  "sơ ngắn mô phỏng người dùng mới. Bấm “Vì sao?” để xem đóng góp của từng yếu tố (giá trị SHAP).")
+                  "sơ ngắn mô phỏng người dùng mới. Trong thí nghiệm người dùng mới bên dưới, kiểu này chính xác ngang "
+                  "công thức trộn 120/n với người có nhiều lượt chấm và hơn 4,7% với người có ít lượt chấm hơn, danh "
+                  "sách cũng bám gu hơn; riêng khi mới thích 1 phim, công thức trộn chính xác hơn. Bấm “Vì sao?” để xem "
+                  "đóng góp của từng yếu tố (giá trị SHAP).")
     elif liked:
         c = STYLES.get(style, STYLES[DEFAULT_STYLE])[1] or svc.pop_c
         key, short = STYLE_KEY.get(style, STYLE_KEY[DEFAULT_STYLE]), "Công thức trộn ALS + ItemKNN + nội dung + phổ biến"
@@ -623,16 +628,14 @@ def model_info(method: str, liked: int, style: str = DEFAULT_STYLE) -> None:
                   f"Trọng số độ phổ biến bằng {c:g}/n với n là số phim bạn đã thích (bạn thích {liked} phim nên trọng "
                   f"số là {c:g}/{liked} = {fmt(c / liked, 1)}): càng biết nhiều về bạn, gợi ý càng dựa vào "
                   "sở thích riêng thay vì độ phổ biến. Vì vậy khi mới thích vài phim, danh sách còn nhiều phim nổi "
-                  "tiếng chưa hẳn đúng gu; chấm thêm phim sẽ thấy rõ phần sở thích riêng. Trong thí nghiệm người dùng "
-                  "mới bên dưới, cách này chính xác hơn kiến trúc hai tầng và gợi ý theo độ phổ biến; muốn danh sách "
-                  "bám gu hơn, chọn “Sát gu nhất” ở mục “Kiểu gợi ý”. Bấm “Vì sao?” để xem đóng góp đúng của từng "
-                  "thành phần.")
+                  "tiếng chưa hẳn đúng gu; chấm thêm phim sẽ thấy rõ phần sở thích riêng. Muốn danh sách bám gu hơn, "
+                  "chọn “Sát gu nhất” ở mục “Kiểu gợi ý”. Bấm “Vì sao?” để xem đóng góp đúng của từng thành phần.")
     else:
         key, short = "Phổ biến nhất", "Độ phổ biến theo thể loại (chưa có phim thích)"
         detail = ("Chưa có phim nào được chấm 4-5★ nên chưa học được sở thích riêng: hệ thống chọn phim được thích "
                   "nhiều nhất, trong các thể loại đã chọn nếu có.")
     ndcg = ""
-    if cold is not None and key in cold.columns:
+    if cold is not None and key in cold.columns and liked:  # chưa thích phim nào: không có mức n tương ứng
         where = (f"{level} phim trở lên" if liked > COLD_LEVELS[-1] else
                  f"{level} phim" if liked == level else f"{level} phim, mức đo gần nhất với {liked} phim của bạn")
         ndcg = f" · NDCG@10 {fmt(cold.loc[level, key], 4)} khi người mới thích {where}"
@@ -647,11 +650,11 @@ def model_info(method: str, liked: int, style: str = DEFAULT_STYLE) -> None:
                          hide_index=True, width="stretch")
             st.caption("Người dùng MovieLens có từ 30 phim thích được chia thành 5 phần rời nhau; mỗi lần, một phần bị loại "
                        "hẳn khỏi dữ liệu huấn luyện rồi “đăng ký mới” với n phim thích lấy từ lịch sử của họ, và được đo trên "
-                       "các phim họ thích về sau (10% lượt chấm cuối). Trọng số 120/n được chọn trên một phần riêng; bảng "
-                       "là kết quả trên 4 phần còn lại (3.307 người). Trung bình trên các mức n, công thức trộn này hơn kiến "
-                       "trúc hai tầng 12,9% và hơn độ phổ biến 14,9% (có ý nghĩa thống kê). Ở nhóm 4.539 người có từ 10 phim thích "
-                       "(n = 1–10), nó hơn độ phổ biến 16,5% nhưng hơn kiến trúc hai tầng 6,8% chưa có ý nghĩa thống kê, "
-                       "và kém trọng số 60/n 3,2%.")
+                       "các phim họ thích về sau (10% lượt chấm cuối). Mô hình mặc định được chọn trên một phần riêng; bảng "
+                       "là kết quả trên 4 phần còn lại (3.307 người). Trung bình trên các mức n, hai tầng và công thức trộn "
+                       "120/n ngang nhau (chênh 0,2%, không có ý nghĩa thống kê), cả hai hơn độ phổ biến khoảng 15%. Ở "
+                       "nhóm 4.539 người có từ 10 phim thích (n = 1–10), hai tầng hơn công thức trộn 120/n 4,7% (có ý "
+                       "nghĩa thống kê).")
         res = get_results(RESULTS_PATH, _mtime(RESULTS_PATH))
         if res is None:
             return
@@ -718,14 +721,15 @@ def page_home(ratings: dict[int, int]) -> None:
         style = DEFAULT_STYLE
         if not guest and liked:
             options = [k for k in STYLES if svc.ranker is not None or STYLES[k][0] == "blend"]
-            saved_style = st.session_state.get("style_saved", DEFAULT_STYLE)
+            saved_style = db.get_style(st.session_state.user_id) or DEFAULT_STYLE  # lưu theo tài khoản như độ đa dạng
             style = mid.segmented_control("Kiểu gợi ý", options, key="style",
                                           default=saved_style if saved_style in options else DEFAULT_STYLE,
                                           required=True, help=STYLE_HELP,
-                                          on_change=lambda: st.session_state.update(style_saved=st.session_state.style)
+                                          on_change=lambda: db.set_style(st.session_state.user_id,
+                                                                         st.session_state.style or DEFAULT_STYLE)
                                           ) or DEFAULT_STYLE
         mode, pop_c = STYLES[style] if liked and not guest else ("blend", None)
-        ctx = (tuple(genres), level, mode, pop_c)
+        ctx = (tuple(genres), level, style)  # đổi kiểu gợi ý thì không so với danh sách cũ; 0 → 1 phim thích vẫn so
         hold = st.session_state.get("rec_hold")
         if hold is not None and hold["ctx"] == ctx:
             recs, change = hold["recs"], ""
@@ -754,9 +758,9 @@ def page_home(ratings: dict[int, int]) -> None:
         st.caption(f"{len(recs)} phim · {n_genres} thể loại khác nhau")
         if not guest:  # khách chưa có gợi ý riêng, không cần thông tin mô hình
             model_info(method, liked, style)
-            if style == DEFAULT_STYLE and liked < 20:
-                st.caption("Hồ sơ còn ngắn nên gợi ý đang nghiêng về phim nổi tiếng. Chọn “Cân bằng” hoặc “Sát gu nhất” "
-                           "ở mục “Kiểu gợi ý” nếu muốn danh sách bám gu hơn.")
+            if style != DEFAULT_STYLE and 0 < liked < 20:
+                st.caption("Hồ sơ còn ngắn nên kiểu gợi ý này đang nghiêng về phim nổi tiếng. Chọn “Sát gu nhất” ở mục "
+                           "“Kiểu gợi ý” nếu muốn danh sách bám gu hơn.")
         if hold is not None:
             n_new = sum(m["item"] in ratings for m in recs)
             with st.container(border=True, horizontal=True, vertical_alignment="center"):
@@ -769,13 +773,43 @@ def page_home(ratings: dict[int, int]) -> None:
         movie_grid(recs, "rec", ratings)
 
 
+@st.cache_resource(show_spinner=False)
+def _title_index() -> dict[str, str]:
+    """Tên hiển thị viết thường (bỏ năm) -> tên hiển thị, dùng để gợi ý khi gõ sai chính tả."""
+    out = {}
+    for t in svc.movies["title"]:
+        name = display_title(t, year=False)
+        out.setdefault(name.lower(), name)
+    return out
+
+
+def close_titles(query: str, n: int = 3) -> list[str]:
+    import difflib
+
+    idx = _title_index()
+    q = " ".join(query.lower().split())
+    keys = difflib.get_close_matches(q, list(idx), n=n, cutoff=0.75)
+    if not keys:  # so từng từ với từng từ trong tên ("godfathr 2" -> "godfather")
+        words = {w for k in idx for w in k.split() if len(w) > 3}
+        fixed = [(difflib.get_close_matches(w, words, n=1, cutoff=0.75) or [w])[0] for w in q.split()]
+        if fixed != q.split() and svc.search(" ".join(fixed)):
+            return [" ".join(fixed)]
+    return [idx[k] for k in keys]
+
+
 def page_search(ratings: dict[int, int]) -> None:
     query = st.text_input("Tên phim (tiếng Anh)", key="search_q", placeholder="ví dụ: matrix")[:100]
     results = svc.search(query)
     if query.strip() and not results:
         shown_q = query.strip() if len(query.strip()) <= 40 else query.strip()[:40] + "…"
-        st.warning(f"Không có phim nào tên khớp “{shown_q}”. Hãy thử tên tiếng Anh gốc (vd. “matrix”, "
-                   "“star wars”), bớt vài từ, hoặc dùng trang Tìm theo mô tả nếu chỉ nhớ nội dung phim.")
+        near = close_titles(query)
+        if near:  # gõ sai chính tả ("matrx", "godfathr"): gợi ý tên gần nhất
+            st.info(f"Không có phim nào tên khớp “{shown_q}”. Có phải bạn muốn tìm: " +
+                    ", ".join(f"“{t}”" for t in near) + "? Kết quả cho tên gần nhất ở bên dưới.")
+            results = svc.search(near[0])
+        else:
+            st.warning(f"Không có phim nào tên khớp “{shown_q}”. Hãy thử tên tiếng Anh gốc (vd. “matrix”, "
+                       "“star wars”), bớt vài từ, hoặc dùng trang Tìm theo mô tả nếu chỉ nhớ nội dung phim.")
     elif query.strip():
         total = svc.search_all(query)[1]
         st.caption(f"{total:,} phim khớp".replace(",", ".") + (f", hiện {len(results)} phim phổ biến nhất." if total > len(results)
@@ -854,7 +888,10 @@ def page_assistant(ratings: dict[int, int]) -> None:
                    "“gợi ý phim hài, đừng có lãng mạn”, rồi hỏi tiếp “còn phim nào khác không”.")
     for n, turn in enumerate(chat):
         with st.chat_message(turn["role"]):
-            st.markdown(turn["text"])
+            if turn["role"] == "user":
+                st.text(turn["text"])  # tin nhắn của người dùng hiện nguyên văn, không hiểu thành markdown
+            else:
+                st.markdown(turn["text"])
             if turn.get("movies"):
                 movie_grid(turn["movies"], f"chat{n}", ratings, cols=5)
     message = (st.chat_input("Bạn muốn xem phim gì?", key="chat_input") or "").strip()
@@ -1052,7 +1089,7 @@ def _unknown_path(known: set[str]) -> str:
     path = path.split("://", 1)[-1].split("/", 1)[1] if "/" in path.split("://", 1)[-1] else ""
     path = path.strip("/")
     path = urllib.parse.unquote(path)
-    return path if path and path not in known | {HOME_ALIAS} and "/" not in path and len(path) <= 200 else ""
+    return path if path and path not in known | {HOME_ALIAS} and "/" not in path and len(path) <= 2000 else ""
 
 
 def _go_home() -> None:

@@ -228,11 +228,13 @@ class RecommenderService:
                 "poster_url": f"{IMAGE_BASE}{poster}" if poster else "",
                 "overview": row.get("overview", ""), "stats": self.stats(j), **extra}
 
-    def _rank_two_stage(self, ratings: dict[int, int], liked: list[int],
-                        als_score: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _rank_two_stage(self, ratings: dict[int, int], liked: list[int], als_score: np.ndarray,
+                        seen_items: list[int] | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Điểm từ bộ xếp hạng hai tầng cho MỘT người dùng web (phim ngoài ứng viên = -inf), kèm chỉ số phim
-        ứng viên và ma trận đặc trưng của chúng (dùng để giải thích bằng SHAP)."""
-        items, X = self.profile_features(ratings, liked, als_score)
+        ứng viên và ma trận đặc trưng của chúng (dùng để giải thích bằng SHAP).
+        seen_items: phim loại khỏi ứng viên (mặc định: các phim trong hồ sơ, như trên web). Thí nghiệm người dùng
+        mới truyền mọi phim đã xem để tầng 1 không phí chỗ ứng viên cho phim sẽ bị loại khi đo."""
+        items, X = self.profile_features(ratings, liked, als_score, seen_items=seen_items)
         out = np.full(len(self.movies), -np.inf, dtype=np.float32)
         booster = self.ranker["booster"]
         out[items] = booster.predict(X, num_iteration=booster.best_iteration)

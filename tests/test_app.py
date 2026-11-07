@@ -80,6 +80,9 @@ def test_database_accounts_and_ratings(tmp_path):
     db = Database(tmp_path / "app.db")
     uid = db.register("phu", "matkhau")
     assert db.login("phu", "matkhau") == uid and db.login("phu", "sai") is None
+    assert db.get_style(uid) == ""
+    db.set_style(uid, "Sát gu nhất")
+    assert db.get_style(uid) == "Sát gu nhất"  # kiểu gợi ý lưu theo tài khoản, còn sau khi tải lại trang
     with pytest.raises(ValueError):
         db.register("phu", "khac1")  # trùng tên
     db.rate(uid, 3, 5); db.rate(uid, 3, 2); db.rate(uid, 7, 4)

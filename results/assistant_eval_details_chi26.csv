@@ -1,0 +1,27 @@
+model,message,gold_action,action,description,genres,exclude_genres,similar_to,year_from,year_to,more
+luat,hello bạn ơi,chat,chat,,[],[],,0,0,False
+luat,cảm ơn nha gợi ý hay lắm,chat,describe,cảm ơn nha gợi ý hay lắm,[],[],,0,0,False
+luat,bạn giúp được gì cho mình,chat,describe,bạn giúp được gì cho mình,[],[],,0,0,False
+luat,mình đang buồn muốn xem phim hài cho vui,recommend,describe,mình đang buồn muốn xem phim hài cho vui,['Comedy'],[],,0,0,False
+luat,có phim phiêu lưu nào cho cả nhà xem không,recommend,describe,có phim phiêu lưu nào cho cả nhà xem không,['Adventure'],[],,0,0,False
+luat,gợi ý phim trinh thám nhưng không kinh dị,recommend,recommend,,"['Horror', 'Mystery']",[],,0,0,False
+luat,phim viễn tưởng từ năm 1990 trở đi,recommend,describe,phim viễn tưởng từ năm 1990 trở đi,['Sci-Fi'],[],,1990,0,False
+luat,cho mình vài phim cao bồi cũ trước 1970,recommend,describe,cho mình vài phim cao bồi cũ trước 1970,['Western'],[],,0,1969,False
+luat,phim lãng mạn thập niên 50,recommend,recommend,,['Romance'],[],,1950,1959,False
+luat,muốn xem phim hành động giật gân,recommend,recommend,,"['Action', 'Thriller']",[],,0,0,False
+luat,có phim nhạc kịch nào không,recommend,recommend,,['Musical'],[],,0,0,False
+luat,cuối tuần này nên xem phim gì,recommend,describe,cuối tuần này nên xem phim gì,[],[],,0,0,False
+luat,còn phim nào giống Forrest Gump không,similar,similar,,[],[],Forrest Gump,0,0,True
+luat,tìm cho mình phim tương tự Pulp Fiction,similar,similar,,[],[],Pulp Fiction,0,0,False
+luat,mình mê Star Wars quá có phim nào kiểu vậy không,similar,describe,mình mê Star Wars quá có phim nào kiểu vậy không,[],[],,0,0,False
+luat,phim giống The Lion King,similar,similar,,[],[],The Lion King,0,0,False
+luat,có gì giống Home Alone không,similar,similar,,[],[],Home Alone,0,0,False
+luat,phim về một con lợn muốn trở thành chó chăn cừu,describe,describe,phim về một con lợn muốn trở thành chó chăn cừu,[],[],,0,0,False
+luat,anh chàng bị nhốt trong một chương trình truyền hình mà không biết,describe,describe,anh chàng bị nhốt trong một chương trình truyền hình mà không biết,[],[],,0,0,False
+luat,phim về võ sĩ quyền anh nghèo được trao cơ hội đấu với nhà vô địch,describe,describe,phim về võ sĩ quyền anh nghèo được trao cơ hội đấu với nhà vô địch,[],[],,0,0,False
+luat,cảnh sát phải giữ xe buýt chạy trên 50 dặm một giờ nếu không bom sẽ nổ,describe,describe,cảnh sát phải giữ xe buýt chạy trên 50 dặm một giờ nếu không bom sẽ nổ,[],[],,0,0,False
+luat,phim hoạt hình về những món đồ chơi có sự sống,describe,describe,phim hoạt hình về những món đồ chơi có sự sống,['Animation'],[],,0,0,False
+luat,phim kinh dị về con cá mập ăn thịt người ở bãi biển,describe,describe,phim kinh dị về con cá mập ăn thịt người ở bãi biển,['Horror'],[],,0,0,False
+luat,cô bé bị lốc xoáy cuốn tới một xứ sở thần tiên,describe,describe,cô bé bị lốc xoáy cuốn tới một xứ sở thần tiên,[],[],,0,0,False
+luat,người đàn ông kể chuyện đời mình khi ngồi chờ xe buýt,describe,describe,người đàn ông kể chuyện đời mình khi ngồi chờ xe buýt,[],[],,0,0,False
+luat,phim chiến tranh về những người lính đi tìm một binh nhì,describe,describe,phim chiến tranh về những người lính đi tìm một binh nhì,['War'],[],,0,0,False

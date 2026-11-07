@@ -70,7 +70,9 @@ ASK_MORE = "Bạn muốn xem phim như thế nào? Hãy mô tả nội dung ho�
 THANKS = "Không có gì! Khi nào cần thêm phim, bạn cứ nhắn mình nhé."
 _THANKS = re.compile(r"^(cảm ơn|cám ơn|thanks?|thank you)", re.I)
 # câu nhắc tới trẻ nhỏ: chỉ lấy phim thuộc thể loại Thiếu nhi (Hoạt hình thôi chưa đủ, vd. South Park)
-_KIDS = re.compile(r"(trẻ em|trẻ con|thiếu nhi|con nít|cho bé|các bé|em bé|\bkids?\b|children|\d+\s*tuổi)", re.I)
+# tuổi chỉ tính khi đi kèm từ chỉ trẻ nhỏ ("bé 5 tuổi", "con 7 tuổi"): "mình 20 tuổi" không phải câu hỏi phim thiếu nhi
+_KIDS = re.compile(r"(trẻ em|trẻ con|thiếu nhi|con nít|cho bé|các bé|em bé|\bkids?\b|children|"
+                   r"(?:bé|con|cháu|trẻ|nít)\s+(?:[1-9]|1[0-2])\s*tuổi)", re.I)
 
 
 # Lời đáp cũng ép theo JSON vì Qwen3 không tắt được chế độ suy luận khi viết tự do.
@@ -265,7 +267,10 @@ def rule_intent(message: str, genres: list[str]) -> dict:
     flat = " ".join(message.split())  # giữ nguyên chữ hoa của tên phim
     sim = _SIMILAR.search(flat)
     if sim:
-        name = re.sub(r"[?.!]+$|\s+(không|nhé|nha|đi|ạ|với)$", "", sim.group(1).strip(), flags=re.I).strip()
+        # tên phim dừng ở dấu phẩy hoặc từ nối ("phim giống The Matrix nhưng đừng kinh dị" -> "The Matrix")
+        name = re.split(r"\s*[,;]\s*|\s+(?:nhưng|mà|và|ngoại trừ|trừ|đừng|không có)\s+", sim.group(1).strip(),
+                        maxsplit=1, flags=re.I)[0]
+        name = re.sub(r"[?.!]+$|\s+(không|nhé|nha|đi|ạ|với)$", "", name.strip(), flags=re.I).strip()
         if name.lower() in _FILLER or not name:  # "thích X, có phim nào tương tự không": tên phim nằm trước
             before = _TITLE_BEFORE.search(flat)
             name = before.group(1).strip(" ,") if before else ""
@@ -358,11 +363,15 @@ class Assistant:
         for key in ("genres", "exclude_genres"):
             if rule[key]:
                 out[key] = sorted(set(out[key]) | set(rule[key]))
-            elif last and out[key] and set(out[key]) == set(last.get(key, [])):
-                out[key] = []  # chép từ lượt trước
+            elif out["action"] == "similar":
+                out[key] = []  # "phim giống X" không nêu thể loại: LLM hay tự gán thể loại (của X hoặc của lượt trước)
+            elif last and out[key]:
+                out[key] = [g for g in out[key] if g not in set(last.get(key, []))]  # bỏ phần chép từ lượt trước
         out["genres"] = [g for g in out["genres"] if g not in out["exclude_genres"]]
         if rule["year_from"] or rule["year_to"]:
             out.update(year_from=rule["year_from"], year_to=rule["year_to"])
+        elif out["action"] == "similar":
+            out.update(year_from=0, year_to=0)
         elif last and (out["year_from"], out["year_to"]) != (0, 0) and \
                 (out["year_from"], out["year_to"]) == (last.get("year_from"), last.get("year_to")):
             out.update(year_from=0, year_to=0)
@@ -410,10 +419,15 @@ class Assistant:
             cands = self.svc.recommend(ratings, intent["genres"], k=pool)
             source = "recommend"
         ok = self._allowed(intent, strict_genres=True)
-        picked = [m for m in cands if m["item"] not in skip and ok[m["item"]]][: self.k]
+        picked = [m for m in cands if m["item"] not in skip and ok[m["item"]]]
+        want = set(intent.get("genres", []))
+        if len(want) > 1:  # "hành động khoa học viễn tưởng": phim có đủ các thể loại lên trước, giữ thứ tự trong mỗi nhóm
+            picked.sort(key=lambda m: -len(want & self.genre_sets[m["item"]]))
+        picked = picked[: self.k]
         for m in picked:  # thể loại ở đây là thể loại hỏi trong khung chat, không phải ô "Thể loại yêu thích"
-            if str(m.get("reason", "")).startswith("Hợp thể loại bạn chọn"):
-                m["reason"] = m["reason"].replace("Hợp thể loại bạn chọn", "Đúng thể loại bạn hỏi", 1)
+            match = want & self.genre_sets[m["item"]]
+            if source == "recommend" and match:
+                m["reason"] = f"Đúng thể loại bạn hỏi: {genre_vi(sorted(match))}"
         return picked, source
 
     # ---------- bước 3: viết lời đáp ----------
@@ -456,8 +470,10 @@ class Assistant:
         personal=False (chưa chấm phim nào, vd. khách): không nói "theo sở thích của bạn"."""
         intent = intent or {}
         conds = []
-        if intent.get("genres"):  # bộ lọc lấy phim có ÍT NHẤT một thể loại được hỏi
-            conds.append(f"thuộc thể loại {genre_vi(intent['genres'], sep=' hoặc ')}")
+        if intent.get("genres"):  # bộ lọc lấy phim có ÍT NHẤT một thể loại được hỏi; phim có đủ các thể loại xếp trước
+            g = intent["genres"]
+            conds.append(f"thuộc thể loại {genre_vi(g, sep=' hoặc ')}" +
+                         (" (phim có đủ các thể loại này được xếp trước)" if len(g) > 1 else ""))
         if intent.get("require"):
             conds.append(f"dành cho {genre_vi(intent['require']).lower()}")
         if intent.get("exclude_genres"):
@@ -466,8 +482,11 @@ class Assistant:
         if y0 and y1:
             conds.append(f"ra mắt năm {y0}" if y0 == y1 else f"ra mắt {y0}–{y1}")
         elif y0 or y1:
-            conds.append(f"ra mắt từ {y0}" if y0 else f"ra mắt trước {y1}")
+            conds.append(f"ra mắt từ {y0}" if y0 else f"ra mắt đến hết {y1}")  # year_to đã gồm năm đó
         cond = (" " + ", ".join(conds)) if conds else ""
+        if source == "semantic" and intent.get("action") == "similar" and intent.get("similar_to"):
+            return (f"Mình chưa tìm thấy phim “{intent['similar_to']}” trong kho, nên đây là {n} phim có nội dung gần "
+                    f"với câu của bạn{cond}:")
         if source == "semantic":
             return f"Mình tìm được {n} phim có nội dung gần với mô tả của bạn{cond}:"
         if source == "similar":

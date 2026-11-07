@@ -45,9 +45,10 @@ class Database:
         )
         # cột thêm sau: cơ sở dữ liệu tạo từ bản cũ chưa có thì bổ sung, dữ liệu cũ giữ nguyên
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(users)")}
-        if "diversity" not in cols:
-            with self.conn:
-                self.conn.execute("ALTER TABLE users ADD COLUMN diversity TEXT NOT NULL DEFAULT ''")
+        for col in ("diversity", "style"):
+            if col not in cols:
+                with self.conn:
+                    self.conn.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
     def register(self, username: str, password: str, reserved: set[str] | frozenset[str] = frozenset()) -> int:
         """reserved: tên dành riêng (tài khoản quản trị), không cho tự đăng ký trên web; tạo bằng scripts/create_admin.py."""
@@ -94,6 +95,15 @@ class Database:
         """Mức đa dạng thể loại người dùng chọn ở trang gợi ý ("Không", "Nhẹ", "Vừa", "Mạnh")."""
         with self.conn:
             self.conn.execute("UPDATE users SET diversity = ? WHERE id = ?", (level, user_id))
+
+    def set_style(self, user_id: int, style: str) -> None:
+        """Kiểu gợi ý người dùng chọn ở trang gợi ý ("Phổ biến", "Cân bằng", "Sát gu nhất")."""
+        with self.conn:
+            self.conn.execute("UPDATE users SET style = ? WHERE id = ?", (style, user_id))
+
+    def get_style(self, user_id: int) -> str:
+        row = self.conn.execute("SELECT style FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row[0] if row else ""
 
     def get_diversity(self, user_id: int) -> str:
         row = self.conn.execute("SELECT diversity FROM users WHERE id = ?", (user_id,)).fetchone()

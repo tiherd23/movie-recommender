@@ -106,6 +106,7 @@ def main() -> None:
     top_pop = set(np.argsort(-np.asarray(svc.pop))[:K].tolist())
 
     seen_by_user = hist.groupby("user")["item"].apply(list)
+    true_rating = {u: dict(zip(g["item"].astype(int), g["rating"].astype(int))) for u, g in hist.groupby("user")}
     rows = []
     for u in new_users:
         order = rng.permutation(liked_hist[u])
@@ -123,7 +124,7 @@ def main() -> None:
                     continue
             else:
                 liked = [int(i) for i in order[:n]]
-                ratings = {i: 5 for i in liked}
+                ratings = {i: true_rating[u][i] for i in liked}  # số sao thật (4 hoặc 5), như lúc huấn luyện bộ xếp hạng
             als = svc.Y @ svc._fold_in(liked)
             knn_part = svc.sim[liked].toarray()
             parts = svc._blend_parts(liked, [], als, knn_part)
@@ -137,7 +138,10 @@ def main() -> None:
             }
             for name, rk in rankers.items():
                 svc.ranker = rk
-                scores[name] = svc._rank_two_stage(ratings, liked, als)[0].astype(np.float64)
+                # ứng viên bỏ mọi phim đã xem như các mô hình khác (trước đây chỉ bỏ n phim trong hồ sơ, nên 28–34% chỗ
+                # ứng viên của tầng 1 bị phí cho phim sẽ bị loại khi đo)
+                excl = seen if args.exclude == "history" or n == FULL else list(ratings)
+                scores[name] = svc._rank_two_stage(ratings, liked, als, seen_items=excl)[0].astype(np.float64)
             for w in args.pop_weights:  # biến thể: trọng số độ phổ biến cố định khác
                 scores[f"Trộn, phổ biến {w:g}"] = (rest + w * z_pop).astype(np.float64)
             for sched in args.schedules:  # trọng số giảm theo số phim thích: w(n) = c * n^-p

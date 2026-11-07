@@ -197,6 +197,10 @@ def test_rule_intent_without_llm():
     assert rule_intent("phim trước năm 1980", genres)["year_to"] == 1979
     assert (lambda r: (r["year_from"], r["year_to"]))(rule_intent("romantic comedies from the 90s", genres)) == (1990, 1999)
     assert rule_intent("phim hoạt hình cho con nít 5 tuổi", genres).get("require") == ["Children's"]
+    assert "require" not in rule_intent("mình 20 tuổi, gợi ý phim hài", genres)
+    assert "require" not in rule_intent("phim kinh dị cho người trên 18 tuổi", genres)
+    r = rule_intent("phim giống The Matrix nhưng đừng kinh dị", genres)
+    assert r["similar_to"] == "The Matrix" and r["exclude_genres"] == ["Horror"]
     assert rule_intent("phim hoạt hình cho trẻ em", genres)["genres"] == ["Children's"]
     assert rule_intent("phim nào giống Star Wars", genres + ["War"])["genres"] == []  # tên phim không phải thể loại
     assert rule_intent("gợi ý vài phim hài", genres)["action"] == "recommend"  # chỉ nêu thể loại: gợi ý + lọc
