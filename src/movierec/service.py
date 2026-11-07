@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import pickle
 import re
+import threading
 import unicodedata
 from pathlib import Path
 
@@ -30,6 +31,22 @@ LIKE = 4  # chấm từ 4 sao trở lên được coi là "thích"
 POP_C = 120.0
 POP_P = 1.0
 DISLIKE = 2  # chấm từ số sao này trở xuống là không thích
+DISLIKE_TOPN = 10  # luật "không thích" chỉ xét 10 phim giống nhất của mỗi phim bị chấm thấp
+POP_REASON_MIN_ALS = 0.10  # lý do "cả người thích X" chỉ khi phần ALS chiếm ít nhất 10% tổng phần dương
+
+
+def disliked_drop_mask(sim, disliked, near_good: np.ndarray, topn: int = DISLIKE_TOPN) -> np.ndarray:
+    """Phim cần bỏ vì giống một phim bị chấm thấp: nằm trong topn phim giống nhất (ItemKNN) của phim đó VÀ giống nó
+    hơn mọi phim đã thích. Giới hạn topn để một lượt chấm thấp không xóa cả mảng lớn của danh sách."""
+    drop = np.zeros(sim.shape[1], dtype=bool)
+    for i in disliked:
+        row = sim[int(i)]
+        if row.nnz == 0:
+            continue
+        o = np.argsort(-row.data)[:topn]
+        idx, val = row.indices[o], row.data[o]
+        drop[idx[val > near_good[idx]]] = True
+    return drop
 GENRE_SHARE = 0.5  # đã chọn thể loại (và đã thích ít nhất 1 phim) thì ít nhất nửa danh sách thuộc các thể loại đó
 
 # Tên tiếng Việt của 18 thể loại MovieLens (chỉ để hiển thị; dữ liệu và mô hình vẫn dùng tên gốc)
@@ -40,6 +57,13 @@ GENRE_VI = {
     "Romance": "Lãng mạn", "Sci-Fi": "Khoa học viễn tưởng", "Thriller": "Giật gân", "War": "Chiến tranh",
     "Western": "Miền Tây",
 }
+
+
+def _share(factors, label: str) -> float:
+    """Tỉ lệ của một thành phần trong tổng các phần dương ([(nhãn, giá trị)])."""
+    pos = {k: v for k, v in (factors or []) if v > 0}
+    total = sum(pos.values())
+    return pos.get(label, 0.0) / total if total > 0 else 0.0
 
 
 def short_title(title: str) -> str:
@@ -63,6 +87,9 @@ def display_title(title: str, year: bool = True) -> str:
     if m:
         title = f"{m['art']} {m['base']}{m['alt'] or ''} {m['year']}"
     return title if year else re.sub(r"\s*\(\d{4}\)$", "", title)
+
+
+_SKIP_TOKENS = {"the", "a", "an"}
 
 
 def _norm_text(text: str) -> list[str]:
@@ -92,6 +119,9 @@ class RecommenderService:
         self.item_vecs = content.item_vecs_
         self.reg, self.alpha, self.weights = reg, alpha, weights
         self.pop_c, self.pop_p = POP_C, POP_P  # trọng số độ phổ biến = pop_c * (số phim thích)^(-pop_p)
+        # hệ số c riêng cho một lượt gợi ý (lựa chọn "Phổ biến ↔ Đúng gu" trên web); theo luồng vì nhiều phiên web
+        # dùng chung một đối tượng dịch vụ
+        self._local = threading.local()
         self._gram = self.Y.T @ self.Y + reg * np.eye(self.Y.shape[1], dtype=np.float32)
         self._title_lower = movies["title"].str.lower()
         self._title_tokens = [_norm_text(display_title(t)) for t in movies["title"]]
@@ -251,7 +281,7 @@ class RecommenderService:
         return out
 
     def recommend(self, ratings: dict[int, int], genres: list[str] | None = None, k: int = 12,
-                  diversity: float = 0.0, mode: str = "blend") -> list[dict]:
+                  diversity: float = 0.0, mode: str = "blend", pop_c: float | None = None) -> list[dict]:
         """ratings: {chỉ số phim: số sao}. Trả về k phim chưa chấm, kèm lý do gợi ý.
 
         diversity (0..1): mức đa dạng thể loại. > 0 thì xếp hạng lại 50 phim điểm cao nhất bằng MMR với
@@ -261,7 +291,15 @@ class RecommenderService:
         mới cho thấy đây là cách tốt nhất với hồ sơ ngắn (scripts/cold_start.py, results/cold_start_tests.csv).
         mode="two_stage": kiến trúc hai tầng (chế độ thử nghiệm trên web, cần ít nhất 1 phim thích), giải thích
         bằng SHAP. Công thức trộn được giải thích bằng cách tách đúng đóng góp của từng thành phần.
+        pop_c: thay hệ số c của trọng số độ phổ biến c·n^-POP_P cho riêng lượt này (None: dùng POP_C = 120).
         """
+        self._local.pop_c = pop_c
+        try:
+            return self._recommend(ratings, genres, k, diversity, mode)
+        finally:
+            self._local.pop_c = None
+
+    def _recommend(self, ratings, genres, k, diversity, mode) -> list[dict]:
         genres = genres or []
         liked = [i for i, r in ratings.items() if r >= LIKE]
         knn_part = self.sim[liked].toarray() if liked else None  # (số phim thích, tổng số phim)
@@ -313,11 +351,12 @@ class RecommenderService:
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
             elif kind == "genre" and liked:
                 reason = f"Hợp thể loại bạn hay xem: {self._shared_genres(j, liked)}"
-            elif match:
+            elif not liked and match:  # chưa thích phim nào: danh sách chỉ gồm phim thuộc thể loại đã chọn
                 reason = f"Hợp thể loại bạn chọn: {genre_vi(match)}"
-            elif liked and dict(factors or []).get(FEATURE_GROUPS["als"], 0) > 0:
-                # độ phổ biến đóng góp nhiều nhất (thường gặp khi mới thích vài phim) nhưng phần ALS cũng dương
-                reason = f"Phim được nhiều người thích, cả người thích {name('als')}"
+            elif liked and _share(factors, FEATURE_GROUPS["als"]) >= POP_REASON_MIN_ALS:
+                # độ phổ biến đóng góp nhiều nhất (thường gặp khi mới thích vài phim) nhưng phần ALS cũng đáng kể
+                first = short_title(self.movies.iloc[src["als"][j][0]]["title"])
+                reason = f"Phim được nhiều người thích, cả người thích {first}"
             else:
                 reason = self.popular_reason(int(j))
             extra = {"added": True} if j in added else {}
@@ -397,15 +436,14 @@ class RecommenderService:
 
     def _drop_disliked_neighbours(self, score: np.ndarray, ratings: dict[int, int], liked: list[int], knn_part,
                                   k: int) -> None:
-        """Luật hậu xử lý: bỏ phim giống một phim bị chấm thấp (≤ DISLIKE sao) hơn mọi phim đã thích.
+        """Luật hậu xử lý: bỏ phim thuộc 10 phim giống nhất của một phim bị chấm thấp (≤ DISLIKE sao) mà giống phim đó hơn mọi phim đã thích.
         Lý do: đặc trưng ItemKNN của bộ xếp hạng cộng độ tương đồng với mọi phim đã xem (giống lúc huấn luyện), nên
         chấm 1★ vẫn đẩy nhẹ các phim giống phim đó lên (scripts/dislike_check.py). Giữ ít nhất k phim để không thiếu."""
         disliked = [i for i, r in ratings.items() if r <= DISLIKE]
         if not disliked:
             return
-        near_bad = np.asarray(self.sim[disliked].max(axis=0).todense()).ravel()
-        near_good = knn_part.max(axis=0) if liked else np.zeros_like(near_bad)
-        drop = (near_bad > near_good) & np.isfinite(score)
+        near_good = knn_part.max(axis=0) if liked else np.zeros(len(score))
+        drop = disliked_drop_mask(self.sim, disliked, near_good) & np.isfinite(score)
         if np.isfinite(score).sum() - drop.sum() >= k:
             score[drop] = -np.inf
 
@@ -429,7 +467,8 @@ class RecommenderService:
 
     def pop_weight(self, n_liked: int) -> float:
         """Trọng số độ phổ biến của công thức trộn khi người dùng đã thích n_liked phim."""
-        return float(self.pop_c * n_liked ** -self.pop_p)
+        c = getattr(self._local, "pop_c", None) if hasattr(self, "_local") else None
+        return float((self.pop_c if c is None else c) * n_liked ** -self.pop_p)
 
     def _blend_score(self, liked: list[int], genres: list[str], als_score, knn_part) -> np.ndarray:
         """Công thức trộn: tổng các thành phần của _blend_parts."""
@@ -495,13 +534,22 @@ class RecommenderService:
         words = _norm_text(query)
         if not words:
             return np.array([], dtype=np.int64), 0
-        hits = [j for j, toks in enumerate(self._title_tokens)
-                if all(any(t.startswith(w) for t in toks) for w in words)]
+        def ok(w: str, toks: list[str]) -> bool:
+            # số ngắn ("1", "2") không khớp với năm phát hành, nếu không gõ "1" sẽ ra gần như cả kho phim
+            pool = toks[:-1] if w.isdigit() and len(w) < 4 and toks and re.fullmatch(r"\d{4}", toks[-1]) else toks
+            return any(t.startswith(w) for t in pool)
+
+        hits = [j for j, toks in enumerate(self._title_tokens) if all(ok(w, toks) for w in words)]
         hits = np.array(hits, dtype=np.int64)
         if len(hits):
-            starts = np.array([self._title_tokens[j][:len(words)] == words for j in hits])
+            # tên trùng hẳn câu tìm (bỏ mạo từ và năm) lên đầu: "alien" -> Alien (1979) trước Alien Escape
+            core = [w for w in words if w not in _SKIP_TOKENS]
+            full = np.array([[t for t in self._title_tokens[j] if t not in _SKIP_TOKENS and not t.isdigit()] == core
+                             for j in hits])
+            starts = np.array([len(self._title_tokens[j]) >= len(words) and
+                               all(t.startswith(w) for t, w in zip(self._title_tokens[j], words)) for j in hits])
             exact = self._title_lower.iloc[hits].str.contains(query.strip().lower(), regex=False).to_numpy()
-            hits = hits[np.lexsort((-self.pop[hits], ~starts, ~exact))]  # khóa cuối là khóa chính
+            hits = hits[np.lexsort((-self.pop[hits], ~starts, ~exact, ~full))]  # khóa cuối là khóa chính
         return hits, len(hits)
 
     def popular(self, k: int = 24) -> list[dict]:

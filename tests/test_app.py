@@ -336,3 +336,25 @@ def test_username_case_insensitive(tmp_path):
     with pytest.raises(ValueError, match="đã tồn tại"):
         db.register("TESTER_1", "12345")
     assert db.login("tester_1", "12345") == uid and db.login("TESTER_1", "sai00") is None
+
+
+def test_dislike_rule_only_touches_nearest_neighbours():
+    """Luật "không thích" chỉ bỏ phim trong topn phim giống nhất của phim bị chấm thấp và giống nó hơn phim đã thích."""
+    from scipy import sparse
+
+    from movierec.service import disliked_drop_mask
+
+    sim = sparse.csr_matrix(np.array([[0, .9, .8, .7, .6], [.9, 0, 0, 0, 0], [.8, 0, 0, 0, 0],
+                                      [.7, 0, 0, 0, 0], [.6, 0, 0, 0, 0]]))
+    near_good = np.array([0, 0, .85, 0, 0])
+    drop = disliked_drop_mask(sim, [0], near_good, topn=3)
+    assert drop.tolist() == [False, True, False, True, False]  # phim 2 gần phim đã thích hơn; phim 4 ngoài top 3
+
+
+def test_pop_c_override_is_per_call(service):
+    """Lựa chọn "Kiểu gợi ý" đổi hệ số c cho riêng một lượt gợi ý, không làm đổi các lượt sau (nhiều phiên dùng chung)."""
+    svc, _ = service
+    ratings = {i: 5 for i in range(4)}
+    before = [m["item"] for m in svc.recommend(ratings, k=8)]
+    svc.recommend(ratings, k=8, pop_c=0.0)
+    assert [m["item"] for m in svc.recommend(ratings, k=8)] == before and svc.pop_weight(4) == svc.pop_c / 4

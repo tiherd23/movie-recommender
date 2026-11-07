@@ -8,11 +8,13 @@ Chạy: python scripts/dislike_rule_eval.py   (CPU, khoảng 10-15 phút)   -> r
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from scipy.stats import wilcoxon
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +22,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from movierec.data import build_dataset  # noqa: E402
 from movierec.ranker import TwoStageRanker  # noqa: E402
+from movierec.service import DISLIKE_TOPN, disliked_drop_mask  # noqa: E402
 
 K = 10
+TOPN = int(os.environ.get("DISLIKE_TOPN", DISLIKE_TOPN))  # đặt DISLIKE_TOPN=1000 để đo luật cũ (không giới hạn)
 
 
 def ndcg_rows(top: np.ndarray, relevant: list[set[int]]) -> np.ndarray:
@@ -42,6 +46,7 @@ def main() -> None:
     ranker.fit_ranker(ds, hist=ds.train, label=ds.val)
     ranker.fit(ds, hist)
     sim = ranker.models_["knn"].sim_
+    sim_csr = sparse.csr_matrix(sim)  # luật trên web dùng ma trận thưa của ItemKNN
     seen = ds.matrix(hist, binary=True)
     relevant = [set() for _ in range(ds.n_users)]
     t = ds.test[ds.test["rating"] >= 4]
@@ -63,9 +68,8 @@ def main() -> None:
             good = g.loc[g["rating"] >= 4, "item"].to_numpy()
             s2 = s.copy()
             if len(bad):
-                near_bad = sim[bad].max(axis=0)
-                near_good = sim[good].max(axis=0) if len(good) else np.zeros_like(near_bad)
-                drop = (near_bad > near_good) & np.isfinite(s2)
+                near_good = np.asarray(sim_csr[good].max(axis=0).todense()).ravel() if len(good) else np.zeros(len(s2))
+                drop = disliked_drop_mask(sim_csr, bad, near_good, topn=TOPN) & np.isfinite(s2)  # đúng luật của web
                 if np.isfinite(s2).sum() - drop.sum() >= K:
                     s2[drop] = -np.inf
             tops["có luật"][u] = np.argsort(-s2)[:K]
@@ -76,14 +80,18 @@ def main() -> None:
         x, y = a[mask], b[mask]
         diff = y - x
         p = wilcoxon(x, y).pvalue if np.any(diff != 0) else 1.0
+        boot = diff[np.random.default_rng(0).integers(0, len(diff), (10000, len(diff)))].mean(axis=1)
         rows.append({"nhóm": name, "số người": int(mask.sum()), "NDCG@10 không luật": round(x.mean(), 4),
+                     "chênh lệch": round(diff.mean(), 5), "CI95 thấp": round(np.percentile(boot, 2.5), 5),
+                     "CI95 cao": round(np.percentile(boot, 97.5), 5),
                      "NDCG@10 có luật": round(y.mean(), 4), "chênh lệch %": round(100 * (y.mean() / x.mean() - 1), 2),
                      "số người tốt hơn": int((diff > 0).sum()), "số người kém hơn": int((diff < 0).sum()),
                      "p (Wilcoxon)": f"{p:.2g}"})
     cov = {n: len(np.unique(v)) / ds.n_items for n, v in tops.items()}
     df = pd.DataFrame(rows)
     df["độ phủ không luật"], df["độ phủ có luật"] = round(cov["không luật"], 4), round(cov["có luật"], 4)
-    df.to_csv(ROOT / "results" / "dislike_rule_eval.csv", index=False)
+    suffix = "" if TOPN == DISLIKE_TOPN else f"_top{TOPN}"
+    df.to_csv(ROOT / "results" / f"dislike_rule_eval{suffix}.csv", index=False)
     print(df.to_string(index=False))
 
 

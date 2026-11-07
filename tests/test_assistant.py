@@ -192,7 +192,11 @@ def test_rule_intent_without_llm():
     mix = rule_intent("phim hài thập niên 90, đừng có lãng mạn", genres)
     assert mix["genres"] == ["Comedy"] and mix["exclude_genres"] == ["Romance"]
     assert (mix["year_from"], mix["year_to"]) == (1990, 1999)
-    assert rule_intent("phim kinh dị sau 1995", genres)["year_from"] == 1995
+    assert rule_intent("phim kinh dị sau 1995", genres)["year_from"] == 1996  # "sau" không gồm năm đó
+    assert rule_intent("phim kinh dị từ năm 1995", genres)["year_from"] == 1995
+    assert rule_intent("phim trước năm 1980", genres)["year_to"] == 1979
+    assert (lambda r: (r["year_from"], r["year_to"]))(rule_intent("romantic comedies from the 90s", genres)) == (1990, 1999)
+    assert rule_intent("phim hoạt hình cho con nít 5 tuổi", genres).get("require") == ["Children's"]
     assert rule_intent("phim hoạt hình cho trẻ em", genres)["genres"] == ["Children's"]
     assert rule_intent("phim nào giống Star Wars", genres + ["War"])["genres"] == []  # tên phim không phải thể loại
     assert rule_intent("gợi ý vài phim hài", genres)["action"] == "recommend"  # chỉ nêu thể loại: gợi ý + lọc
@@ -206,3 +210,26 @@ def test_more_and_similar_work_without_llm():
     again = bot.reply("còn phim nào khác không", {}, state)
     assert first["movies"] and not {m["item"] for m in first["movies"]} & {m["item"] for m in again["movies"]}
     assert bot.reply("chào bạn", {}, {})["source"] == "chat"
+
+
+def test_reconcile_drops_filters_copied_from_previous_turn():
+    """LLM nhỏ hay chép thể loại/năm của lượt trước sang câu hỏi mới; bước hậu kiểm bỏ phần chép đó."""
+    svc = FakeService()
+    first = base(action="recommend", genres=["Action"], year_from=1980, year_to=1989)
+    bot, state = Assistant(svc, FakeSemantic(), make_llm(first), k=3), {}
+    bot.reply("gợi ý phim hành động thập niên 80", {}, state)
+    bot.llm = make_llm(base(action="recommend", similar_to="", genres=["Action"], year_from=1980, year_to=1989))
+    out = bot.reply("phim giống Ghost Hall", {}, state)
+    assert out["intent"]["action"] == "similar" and out["intent"]["similar_to"] == "Ghost Hall"
+    assert out["intent"]["genres"] == [] and (out["intent"]["year_from"], out["intent"]["year_to"]) == (0, 0)
+    # câu mới tự nêu thể loại/thập niên thì luật bổ sung chỗ LLM bỏ sót ("thập niên 90" -> 1990–1999, không phải "từ 1990")
+    bot.llm = make_llm(base(action="recommend", year_from=1990))
+    out = bot.reply("phim kinh dị thập niên 90", {}, state)
+    assert out["intent"]["genres"] == ["Horror"] and (out["intent"]["year_from"], out["intent"]["year_to"]) == (1990, 1999)
+    assert all(1990 <= int(m["title"][-5:-1]) <= 1999 and "Horror" in m["genres"] for m in out["movies"])
+
+
+def test_intro_says_or_for_several_genres():
+    bot = Assistant(FakeService(), FakeSemantic(), None)
+    text = bot.intro(3, "recommend", base(action="recommend", genres=["Action", "Horror"]))
+    assert "Hành động hoặc Kinh dị" in text
